@@ -1,0 +1,444 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ==========================================================================
+   INKWELL DESIGN SYSTEM — Paper, Ink, Burgundy & Antique Brass
+   ========================================================================== */
+
+:root {
+  /* Core Literary Palette */
+  --ivory: #F4EFE5;
+  --aged-paper: #EAE2D2;
+  --parchment-raised: #FAF6ED;
+  --deep-ink: #24231F;
+  --shadow-ink: #1A1916;
+  --muted-ink: #635D52;
+  --burgundy: #713D43;
+  --burgundy-deep: #582D32;
+  --burgundy-wash: rgba(113, 61, 67, 0.12);
+  --brass: #B18A5A;
+  --brass-readable: #8C683C;
+  --faded-brass: #D4BC98;
+
+  /* Semantic Tokens — Daylight Study */
+  --bg-canvas: #F4EFE5;
+  --bg-surface: #FAF6ED;
+  --bg-recessed: #EAE2D2;
+  --bg-shelf: #5B3E2B;
+  --bg-shelf-edge: #3E291B;
+
+  --text-primary: #24231F;
+  --text-secondary: #534D43;
+  --text-muted: #756D60;
+
+  --accent-primary: #713D43;
+  --accent-primary-hover: #5A2E33;
+  --accent-brass: #967042;
+  --accent-brass-bright: #B18A5A;
+
+  --border-hairline: rgba(36, 35, 31, 0.13);
+  --border-brass: rgba(177, 138, 90, 0.36);
+  --border-ink: rgba(36, 35, 31, 0.24);
+  --margin-rule: rgba(113, 61, 67, 0.11);
+  --folio-rule: rgba(36, 35, 31, 0.06);
+
+  /* Atmosphere & Shadows */
+  --lamplight-glow: radial-gradient(
+    ellipse 70% 55% at 28% 14%,
+    rgba(255, 248, 232, 0.72) 0%,
+    rgba(244, 239, 229, 0.2) 55%,
+    transparent 100%
+  );
+  --vignette-edge: radial-gradient(
+    ellipse 85% 85% at 50% 45%,
+    transparent 58%,
+    rgba(165, 146, 118, 0.22) 100%
+  );
+  --ink-blotch-a: rgba(177, 138, 90, 0.07);
+  --ink-blotch-b: rgba(113, 61, 67, 0.055);
+  --grain-opacity: 0.042;
+
+  --shadow-paper:
+    0 1px 2px rgba(26, 25, 22, 0.06),
+    0 6px 16px -4px rgba(36, 35, 31, 0.09),
+    0 18px 36px -12px rgba(36, 35, 31, 0.1);
+  --shadow-stacked:
+    0 1px 1px rgba(26, 25, 22, 0.07),
+    3px 4px 0 -1px #EAE2D2,
+    3px 4px 0 0 rgba(36, 35, 31, 0.12),
+    7px 8px 0 -2px #E3D9C6,
+    7px 8px 0 -1px rgba(36, 35, 31, 0.1),
+    0 18px 38px -10px rgba(26, 25, 22, 0.16);
+  --shadow-book:
+    -4px 8px 16px -4px rgba(26, 25, 22, 0.34),
+    2px 4px 8px -2px rgba(26, 25, 22, 0.22);
+
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-manuscript: 'EB Garamond', Georgia, 'Times New Roman', serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* Ink-spread origin fallback */
+  --ink-x: 90vw;
+  --ink-y: 32px;
+}
+
+.dark {
+  /* Semantic Tokens — Midnight Library */
+  --bg-canvas: #1A1916;
+  --bg-surface: #24231F;
+  --bg-recessed: #141310;
+  --bg-shelf: #2D211A;
+  --bg-shelf-edge: #1B130E;
+
+  --text-primary: #F4EFE5;
+  --text-secondary: #D3C9B7;
+  --text-muted: #9B907E;
+
+  --accent-primary: #A65A62;
+  --accent-primary-hover: #BA6A73;
+  --accent-brass: #C8A16E;
+  --accent-brass-bright: #D4BC98;
+
+  --burgundy-wash: rgba(166, 90, 98, 0.16);
+  --border-hairline: rgba(244, 239, 229, 0.12);
+  --border-brass: rgba(212, 188, 152, 0.26);
+  --border-ink: rgba(244, 239, 229, 0.22);
+  --margin-rule: rgba(212, 188, 152, 0.11);
+  --folio-rule: rgba(244, 239, 229, 0.05);
+
+  /* Candlelit Glow */
+  --lamplight-glow: radial-gradient(
+    ellipse 62% 48% at 32% 18%,
+    rgba(212, 168, 102, 0.16) 0%,
+    rgba(177, 138, 90, 0.06) 45%,
+    transparent 100%
+  );
+  --vignette-edge: radial-gradient(
+    ellipse 85% 85% at 50% 45%,
+    transparent 45%,
+    rgba(8, 7, 6, 0.65) 100%
+  );
+  --ink-blotch-a: rgba(177, 138, 90, 0.06);
+  --ink-blotch-b: rgba(113, 61, 67, 0.09);
+  --grain-opacity: 0.055;
+
+  --shadow-paper:
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    0 12px 28px -6px rgba(0, 0, 0, 0.55);
+  --shadow-stacked:
+    0 2px 4px rgba(0, 0, 0, 0.4),
+    3px 4px 0 -1px #1F1E1A,
+    3px 4px 0 0 rgba(212, 188, 152, 0.12),
+    7px 8px 0 -2px #191814,
+    7px 8px 0 -1px rgba(212, 188, 152, 0.09),
+    0 22px 44px -10px rgba(0, 0, 0, 0.65);
+  --shadow-book:
+    -6px 10px 22px -4px rgba(0, 0, 0, 0.72),
+    2px 5px 10px -2px rgba(0, 0, 0, 0.55);
+}
+
+/* ==========================================================================
+   BASE TYPOGRAPHY & CANVAS
+   ========================================================================== */
+
+html {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-manuscript);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-manuscript);
+  font-size: 1.125rem; /* 18px manuscript baseline */
+  line-height: 1.75;
+  overflow-x: hidden;
+  transition: background-color 0.4s ease, color 0.35s ease;
+}
+
+.dark body {
+  letter-spacing: 0.008em; /* Optical compensation for light ink on dark paper */
+}
+
+::selection {
+  background-color: var(--burgundy-wash);
+  color: var(--text-primary);
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "SOFT" 50, "WONK" 1;
+}
+
+.font-manuscript {
+  font-family: var(--font-manuscript);
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.small-caps-meta {
+  font-family: var(--font-manuscript);
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+}
+
+/* Editorial Drop Cap */
+.drop-cap::first-letter {
+  font-family: var(--font-display);
+  font-size: 3.65rem;
+  line-height: 0.82;
+  float: left;
+  padding-top: 0.2rem;
+  padding-right: 0.65rem;
+  padding-bottom: 0.1rem;
+  font-weight: 500;
+  color: var(--accent-primary);
+}
+
+/* Double-rule archival framing */
+.double-rule-box {
+  border: 1px solid var(--border-brass);
+  outline: 1px solid var(--border-hairline);
+  outline-offset: -5px;
+}
+
+/* Stacked Paper Shadow Surface */
+.paper-folio {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  box-shadow: var(--shadow-stacked);
+}
+
+.paper-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+  box-shadow: var(--shadow-paper);
+}
+
+/* Faint manuscript ruled lines */
+.manuscript-ruled {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent 31px,
+    var(--folio-rule) 31px,
+    var(--folio-rule) 32px
+  );
+}
+
+/* ==========================================================================
+   ATMOSPHERE: PAPER GRAIN, VIGNETTE & BREATHING CANDLELIGHT
+   ========================================================================== */
+
+.atelier-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 260 260' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperNoise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperNoise)' opacity='1'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  mix-blend-mode: multiply;
+}
+
+.dark .atelier-grain {
+  mix-blend-mode: overlay;
+}
+
+.atelier-lamplight {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--lamplight-glow);
+}
+
+.dark .atelier-lamplight {
+  animation: candleBreathe 10s ease-in-out infinite;
+}
+
+.atelier-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  background: var(--vignette-edge);
+}
+
+@keyframes candleBreathe {
+  0%, 100% {
+    opacity: 0.78;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+/* ==========================================================================
+   INK-SPREAD THEME TRANSITION (View Transitions API)
+   ========================================================================== */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+  animation: inkSpreadReveal 720ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes inkSpreadReveal {
+  from {
+    clip-path: circle(0px at var(--ink-x) var(--ink-y));
+  }
+  to {
+    clip-path: circle(160vmax at var(--ink-x) var(--ink-y));
+  }
+}
+
+/* Universal Accessible Focus Ring in antique brass */
+:focus-visible {
+  outline: 2px solid var(--accent-brass);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   REDUCED MOTION COMPLIANCE
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .dark .atelier-lamplight {
+    animation: none !important;
+  }
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
+
+/* Subtle custom scrollbars for literary warmth */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-recessed);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-brass);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-brass);
+}
+
+/* ==========================================================================
+   MANUSCRIPT EDITOR TYPOGRAPHY & DESK FOCUS
+   ========================================================================== */
+
+.manuscript-editor-content {
+  outline: none;
+}
+
+.manuscript-editor-content p {
+  margin-bottom: 1.35rem;
+  line-height: 1.82;
+  transition: opacity 0.25s ease;
+}
+
+.manuscript-editor-content p:first-of-type::first-letter {
+  font-family: var(--font-display);
+  font-size: 3.5rem;
+  line-height: 0.82;
+  float: left;
+  padding-top: 0.2rem;
+  padding-right: 0.65rem;
+  padding-bottom: 0.1rem;
+  font-weight: 500;
+  color: var(--accent-primary);
+}
+
+.manuscript-editor-content h1 {
+  font-family: var(--font-display);
+  font-size: 1.85rem;
+  font-weight: 500;
+  line-height: 1.25;
+  margin-top: 2.2rem;
+  margin-bottom: 1rem;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.manuscript-editor-content h2 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 500;
+  font-style: italic;
+  margin-top: 1.9rem;
+  margin-bottom: 0.8rem;
+  color: var(--text-primary);
+}
+
+.manuscript-editor-content blockquote {
+  font-style: italic;
+  margin: 1.8rem 1.2rem;
+  padding: 0.8rem 1.4rem;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  background-color: var(--burgundy-wash);
+}
+
+.manuscript-editor-content.focus-dimming p:not(:focus-within) {
+  opacity: 0.38;
+}
+
+.manuscript-editor-content.focus-dimming p:focus-within {
+  opacity: 1;
+}
+
+.manuscript-editor-content {
+  caret-color: var(--accent-primary);
+}
+
+.manuscript-editor-content[data-placeholder]:empty::before,
+.manuscript-editor-content p:only-child:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-muted);
+  font-style: italic;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.desk-workspace-stage {
+  perspective: 1200px;
+}

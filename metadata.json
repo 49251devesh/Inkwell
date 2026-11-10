@@ -1,0 +1,8 @@
+{
+  "name": "Remix INKWELL",
+  "description": "A candlelit literary atelier and writing studio for novelists, crafted from paper, ink, and brass.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
