@@ -169,6 +169,8 @@ Ensure the relationships reference the exact names of other characters in the ca
     bookshelves: string[];
     languages: string[];
     formats: Record<string, string>;
+    download_count?: number;
+    summaries?: string[];
   };
 
   function mapBook(b: GutendexBook) {
@@ -182,13 +184,47 @@ Ensure the relationships reference the exact names of other characters in the ca
       id: b.id,
       title: b.title,
       authors: b.authors.map((a) => a.name),
+      authorYears: b.authors.map((a) => ({
+        name: a.name,
+        birthYear: a.birth_year,
+        deathYear: a.death_year,
+      })),
       subjects: (b.subjects || []).slice(0, 10),
+      bookshelves: b.bookshelves || [],
       coverUrl,
       language: b.languages || [],
       textUrl,
       rawFormats: b.formats,
+      downloadCount: b.download_count ?? 0,
+      summary: ((b.summaries ?? [])[0] ?? '').trim(),
     };
   }
+
+  // Category slug → topic terms mapping (all verified against Gutendex)
+  const CATEGORY_TOPICS: Record<string, string[]> = {
+    'horror-gothic':       ['horror', 'gothic', 'ghost stories', 'supernatural'],
+    'science-nature':      ['science', 'natural history', 'astronomy', 'physics', 'biology'],
+    'science-fiction':     ['science fiction'],
+    'mystery-crime':       ['detective', 'mystery'],
+    'adventure':           ['adventure', 'sea stories', 'western'],
+    'romance':             ['love stories', 'romance'],
+    'fantasy-myth':        ['fantasy', 'fairy tales', 'mythology', 'legends'],
+    'history':             ['history', 'military', 'ancient'],
+    'biography-memoir':    ['biography', 'autobiography', 'diaries'],
+    'philosophy-religion': ['philosophy', 'ethics', 'religion'],
+    'travel-exploration':  ['travel', 'voyages', 'exploration'],
+    'poetry-drama':        ['poetry', 'drama', 'plays'],
+    'childrens-classics':  ['children', 'juvenile'],
+    'humor-satire':        ['humor', 'satire'],
+  };
+
+  // Shared caches for browse, popular, random, author endpoints
+  const browseCache = new Map<string, { data: unknown; total: number; ts: number }>();
+  const popularCache = new Map<number, { data: unknown; ts: number }>();
+  const authorCache = new Map<string, { data: unknown; ts: number }>();
+  const BROWSE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+  const POPULAR_TTL = 30 * 60 * 1000;     // 30 minutes
+  const AUTHOR_TTL  = 10 * 60 * 1000;     // 10 minutes
 
   async function fetchWithTimeout(url: string, timeoutMs: number): Promise<globalThis.Response> {
     const controller = new AbortController();
@@ -538,6 +574,179 @@ Ensure the relationships reference the exact names of other characters in the ca
     }
 
     return res.json({ title: bookTitle, chapters });
+  });
+
+  // ---------------------------------------------------------------------------
+  // API: Reading Room — Browse by category, popular, random, author
+  // ---------------------------------------------------------------------------
+
+  /**
+   * GET /api/library/browse
+   * Query params:
+   *   category   - slug from CATEGORY_TOPICS (required)
+   *   page       - page number, default 1
+   *   sort       - 'popular' | 'ascending' | 'descending', default 'popular'
+   *   language   - ISO 639-1 code, e.g. 'en' (optional)
+   *   from_year  - author birth year filter start (optional)
+   *   to_year    - author birth year filter end (optional)
+   *   covers_only - 'true' to filter books with covers (optional)
+   */
+  app.get('/api/library/browse', async (req: Request, res: Response) => {
+    const category   = typeof req.query.category   === 'string' ? req.query.category.trim()   : '';
+    const page       = Math.max(1, parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10) || 1);
+    const sort       = ['popular', 'ascending', 'descending'].includes(req.query.sort as string)
+                        ? (req.query.sort as string) : 'popular';
+    const language   = typeof req.query.language   === 'string' ? req.query.language.trim()   : '';
+    const fromYear   = typeof req.query.from_year  === 'string' ? req.query.from_year.trim()  : '';
+    const toYear     = typeof req.query.to_year    === 'string' ? req.query.to_year.trim()    : '';
+    const coversOnly = req.query.covers_only === 'true';
+
+    if (!category || !CATEGORY_TOPICS[category]) {
+      return res.status(400).json({
+        error: `Unknown category "${category}". Valid: ${Object.keys(CATEGORY_TOPICS).join(', ')}.`,
+      });
+    }
+
+    const cacheKey = JSON.stringify({ category, page, sort, language, fromYear, toYear, coversOnly });
+    const cached = browseCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < BROWSE_TTL) {
+      return res.json({ books: cached.data, total: cached.total });
+    }
+
+    const topics = CATEGORY_TOPICS[category];
+
+    // Fetch each topic in parallel (up to 2 topics to stay fast & polite)
+    const fetchTopic = async (topic: string) => {
+      let url = `https://gutendex.com/books/?topic=${encodeURIComponent(topic)}&page=${page}`;
+      if (sort === 'ascending' || sort === 'descending') url += `&sort=${sort}`;
+      if (language)   url += `&languages=${encodeURIComponent(language)}`;
+      if (fromYear)   url += `&author_year_start=${encodeURIComponent(fromYear)}`;
+      if (toYear)     url += `&author_year_end=${encodeURIComponent(toYear)}`;
+      if (coversOnly) url += `&mime_type=image%2Fjpeg`;
+      try {
+        const r = await fetchWithTimeout(url, 25000);
+        if (!r.ok) return { results: [] as GutendexBook[], count: 0 };
+        const j = (await r.json()) as { results: GutendexBook[]; count: number };
+        return { results: j.results || [], count: j.count || 0 };
+      } catch {
+        return { results: [] as GutendexBook[], count: 0 };
+      }
+    };
+
+    // Query up to top 2 topics for this category
+    const activeTopics = topics.slice(0, 2);
+    const fetched = await Promise.all(activeTopics.map(fetchTopic));
+    const allResults: GutendexBook[] = [];
+    let totalCount = 0;
+    for (const f of fetched) {
+      allResults.push(...f.results);
+      totalCount = Math.max(totalCount, f.count);
+    }
+
+    // Dedup by id, preserve order
+    const seen = new Set<number>();
+    const deduped = allResults.filter((b) => {
+      if (seen.has(b.id)) return false;
+      seen.add(b.id);
+      return true;
+    });
+
+    const books = deduped.map(mapBook);
+    browseCache.set(cacheKey, { data: books, total: totalCount, ts: Date.now() });
+    return res.json({ books, total: totalCount });
+  });
+
+  /**
+   * GET /api/library/popular?page=<n>
+   * Returns the most popular public-domain books from Gutendex.
+   */
+  app.get('/api/library/popular', async (req: Request, res: Response) => {
+    const page = Math.max(1, parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10) || 1);
+    const cached = popularCache.get(page);
+    if (cached && Date.now() - cached.ts < POPULAR_TTL) {
+      return res.json(cached.data);
+    }
+    try {
+      const r = await fetchWithTimeout(
+        `https://gutendex.com/books/?page=${page}`,
+        25000
+      );
+      if (!r.ok) {
+        return res.status(502).json({ error: `Gutendex returned ${r.status}.` });
+      }
+      const json = (await r.json()) as { results: GutendexBook[]; count: number };
+      const data = {
+        books: (json.results || []).map(mapBook),
+        total: json.count || 0,
+      };
+      popularCache.set(page, { data, ts: Date.now() });
+      return res.json(data);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      console.error('[library/popular]', msg);
+      return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
+  });
+
+  /**
+   * GET /api/library/random
+   * Returns a single random popular book.
+   */
+  app.get('/api/library/random', async (req: Request, res: Response) => {
+    try {
+      const randomPage = Math.floor(Math.random() * 20) + 1;
+      const r = await fetchWithTimeout(
+        `https://gutendex.com/books/?page=${randomPage}`,
+        25000
+      );
+      if (!r.ok) {
+        return res.status(502).json({ error: `Gutendex returned ${r.status}.` });
+      }
+      const json = (await r.json()) as { results: GutendexBook[] };
+      const results = json.results || [];
+      if (results.length === 0) {
+        return res.status(404).json({ error: 'No books found.' });
+      }
+      const pick = results[Math.floor(Math.random() * results.length)];
+      return res.json(mapBook(pick));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      console.error('[library/random]', msg);
+      return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
+  });
+
+  /**
+   * GET /api/library/author?name=<authorName>
+   * Returns books by a specific author (or best-match by name search).
+   */
+  app.get('/api/library/author', async (req: Request, res: Response) => {
+    const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+    if (!name || name.length > 200) {
+      return res.status(400).json({ error: 'Parameter "name" must be 1–200 characters.' });
+    }
+    const cacheKey = name.toLowerCase();
+    const cached = authorCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < AUTHOR_TTL) {
+      return res.json(cached.data);
+    }
+    try {
+      const r = await fetchWithTimeout(
+        `https://gutendex.com/books/?search=${encodeURIComponent(name)}`,
+        25000
+      );
+      if (!r.ok) {
+        return res.status(502).json({ error: `Gutendex returned ${r.status}.` });
+      }
+      const json = (await r.json()) as { results: GutendexBook[] };
+      const data = (json.results || []).map(mapBook);
+      authorCache.set(cacheKey, { data, ts: Date.now() });
+      return res.json(data);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      console.error('[library/author]', msg);
+      return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
   });
 
   // ---------------------------------------------------------------------------

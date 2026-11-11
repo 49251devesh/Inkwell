@@ -633,3 +633,37 @@ select option {
 .desk-workspace-stage {
   perspective: 1200px;
 }
+
+/* ==========================================================================
+   READING ROOM BROWSING EXTENSIONS
+   ========================================================================== */
+
+.shelf-row-scroll {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shelf-row-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.book-cover-tilt {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.25s ease;
+  transform-origin: center bottom;
+}
+
+.book-cover-tilt:hover {
+  transform: perspective(400px) rotateY(-6deg) scale(1.03) translateY(-4px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .book-cover-tilt,
+  .book-cover-tilt:hover {
+    transform: none !important;
+    transition: none !important;
+  }
+}
+

@@ -55,6 +55,13 @@ export interface ReaderSettings {
   lineWidth: 'narrow' | 'medium' | 'wide';
 }
 
+export interface CachedCategoryResult {
+  id: string;             // e.g. "browse-horror-gothic-page1-popular"
+  data: any[];            // LibraryBook[]
+  total: number;
+  updatedAt: number;      // Date.now() epoch ms
+}
+
 // ---------------------------------------------------------------------------
 // Database class
 // ---------------------------------------------------------------------------
@@ -65,6 +72,7 @@ class ReadingRoomDatabase extends Dexie {
   readerSettings!: Table<ReaderSettings, string>;
   cachedManifests!: Table<CachedManifest, number>;
   cachedChapters!: Table<CachedChapter, string>;
+  cachedCategoryResults!: Table<CachedCategoryResult, string>;
 
   constructor() {
     super('InkwellReadingRoom');
@@ -81,6 +89,15 @@ class ReadingRoomDatabase extends Dexie {
       readerSettings: 'id',
       cachedManifests: 'id, updatedAt',
       cachedChapters: 'id, bookId, updatedAt',
+    });
+
+    this.version(3).stores({
+      favorites: 'id, addedAt',
+      readingProgress: 'bookId, updatedAt',
+      readerSettings: 'id',
+      cachedManifests: 'id, updatedAt',
+      cachedChapters: 'id, bookId, updatedAt',
+      cachedCategoryResults: 'id, updatedAt',
     });
   }
 }
