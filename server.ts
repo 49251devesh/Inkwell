@@ -4,6 +4,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getParsedEpub, getSanitizedChapterHtml, getAssetFromEpub } from './src/server/epubService';
 
 dotenv.config();
 
@@ -185,6 +186,7 @@ Ensure the relationships reference the exact names of other characters in the ca
       coverUrl,
       language: b.languages || [],
       textUrl,
+      rawFormats: b.formats,
     };
   }
 
@@ -261,6 +263,175 @@ Ensure the relationships reference the exact names of other characters in the ca
       const msg = e instanceof Error ? e.message : 'Network error';
       console.error('[library/book]', msg);
       return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
+  });
+
+  // GET /api/library/book/:id/manifest
+  app.get('/api/library/book/:id/manifest', async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id ?? '', 10);
+    if (!id || id <= 0) {
+      return res.status(400).json({ error: 'Book id must be a positive integer.' });
+    }
+    try {
+      // 1. Try EPUB parse first directly from Gutenberg / disk cache
+      try {
+        const parsed = await getParsedEpub(id);
+        return res.json(parsed.manifest);
+      } catch (epubErr) {
+        console.warn(`[manifest] EPUB parse unavailable for ${id}, falling back to plain-text:`, epubErr);
+      }
+
+      // 2. Fallback: Fetch Gutendex book detail to get plain-text URL
+      let rawBook: any = bookCache.get(id)?.data;
+      if (!rawBook) {
+        const r = await fetchWithTimeout(`https://gutendex.com/books/${id}/`, 20000);
+        if (r.ok) {
+          const json = (await r.json()) as GutendexBook;
+          rawBook = mapBook(json);
+          bookCache.set(id, { data: rawBook, ts: Date.now() });
+        }
+      }
+
+      // 2. Fallback: Parse plain text into manifest format
+      const textUrl = rawBook?.textUrl || '';
+      if (!textUrl) {
+        return res.status(404).json({ error: 'No readable text or EPUB format available for this book.' });
+      }
+
+      const r = await fetchWithTimeout(textUrl, 20000);
+      if (!r.ok) {
+        return res.status(502).json({ error: `Could not fetch book text (${r.status}).` });
+      }
+      const rawText = await r.text();
+
+      // Strip PG header & footer
+      const startMarker = /\*\*\* ?START OF (THE|THIS) PROJECT GUTENBERG/i;
+      const endMarker   = /\*\*\* ?END OF (THE|THIS) PROJECT GUTENBERG/i;
+      let body = rawText;
+      const startMatch = startMarker.exec(rawText);
+      if (startMatch) {
+        const afterStart = rawText.indexOf('\n', startMatch.index);
+        body = afterStart > -1 ? rawText.slice(afterStart + 1) : rawText;
+      }
+      const endMatch = endMarker.exec(body);
+      if (endMatch) {
+        body = body.slice(0, endMatch.index).trimEnd();
+      }
+
+      const chapterPattern = /^(CHAPTER|Chapter|PART|Part|BOOK|Book)\s+([IVXLCDM]+|[0-9]+|[A-Z][a-z]*)[.:—\s]?/m;
+      const romanPattern   = /^([IVXLCDM]{1,6})\.\s*$/m;
+
+      const lines = body.split('\n');
+      const chapters: Array<{ id: string; title: string; order: number; wordCount: number; href: string }> = [];
+      const toc: Array<{ id: string; title: string; level: number; href: string; chapterId: string }> = [];
+      let currentTitle = '';
+      let currentLines: string[] = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (chapterPattern.test(trimmed) || (romanPattern.test(trimmed) && trimmed.length <= 10)) {
+          if (currentLines.some((l) => l.trim())) {
+            const chId = `ch-${chapters.length + 1}`;
+            const t = currentTitle || (chapters.length === 0 ? 'Front Matter' : `Section ${chapters.length}`);
+            const wc = currentLines.join(' ').split(/\s+/).filter(Boolean).length;
+            chapters.push({ id: chId, title: t, order: chapters.length + 1, wordCount: wc, href: `#${chId}` });
+            toc.push({ id: `toc-${chapters.length}`, title: t, level: 1, href: `#${chId}`, chapterId: chId });
+          }
+          currentTitle = trimmed.replace(/[\]\[]/g, '').trim();
+          currentLines = [];
+        } else {
+          currentLines.push(line);
+        }
+      }
+      if (currentLines.some((l) => l.trim())) {
+        const chId = `ch-${chapters.length + 1}`;
+        const t = currentTitle || (chapters.length === 0 ? 'Full Volume' : `Section ${chapters.length + 1}`);
+        const wc = currentLines.join(' ').split(/\s+/).filter(Boolean).length;
+        chapters.push({ id: chId, title: t, order: chapters.length + 1, wordCount: wc, href: `#${chId}` });
+        toc.push({ id: `toc-${chapters.length}`, title: t, level: 1, href: `#${chId}`, chapterId: chId });
+      }
+
+      return res.json({
+        id,
+        title: rawBook?.title || 'Untitled Book',
+        authors: rawBook?.authors || ['Unknown Author'],
+        cover: rawBook?.coverUrl || null,
+        toc,
+        chapters,
+        source: 'text',
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Manifest extraction failed';
+      console.error('[manifest]', msg);
+      return res.status(502).json({ error: msg });
+    }
+  });
+
+  // GET /api/library/book/:id/chapter/:chapterId
+  app.get('/api/library/book/:id/chapter/:chapterId', async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id ?? '', 10);
+    const chapterId = req.params.chapterId;
+    if (!id || id <= 0 || !chapterId) {
+      return res.status(400).json({ error: 'Valid book id and chapter id are required.' });
+    }
+    try {
+      // 1. Try EPUB chapter first directly
+      try {
+        const chapterData = await getSanitizedChapterHtml(id, chapterId);
+        return res.json(chapterData);
+      } catch (epubErr) {
+        console.warn(`[chapter] EPUB chapter ${chapterId} not available, checking text fallback:`, epubErr);
+      }
+
+      // 2. Plain-text fallback for chapter
+      let rawBook: any = bookCache.get(id)?.data;
+      if (!rawBook) {
+        const r = await fetchWithTimeout(`https://gutendex.com/books/${id}/`, 20000);
+        if (r.ok) {
+          const json = (await r.json()) as GutendexBook;
+          rawBook = mapBook(json);
+          bookCache.set(id, { data: rawBook, ts: Date.now() });
+        }
+      }
+
+      // Plain-text fallback for chapter
+      const textUrl = rawBook?.textUrl || '';
+      if (!textUrl) {
+        return res.status(404).json({ error: 'Chapter not found' });
+      }
+      const r = await fetchWithTimeout(textUrl, 20000);
+      if (!r.ok) {
+        return res.status(502).json({ error: `Could not fetch book text.` });
+      }
+      const rawText = await r.text();
+      const paragraphs = rawText.split(/\n\s*\n/).slice(0, 50).map((p) => `<p>${p.trim()}</p>`).join('');
+      return res.json({
+        title: 'Plain Text Chapter',
+        html: `<article class="inkwell-chapter-content">${paragraphs}</article>`,
+        nextChapterId: null,
+        prevChapterId: null,
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Chapter retrieval failed';
+      console.error('[chapter]', msg);
+      return res.status(404).json({ error: msg });
+    }
+  });
+
+  // GET /api/library/book/:id/asset/*
+  app.get('/api/library/book/:id/asset/*', async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id ?? '', 10);
+    const assetPath = req.params[0];
+    if (!id || id <= 0 || !assetPath) {
+      return res.status(400).send('Invalid asset request.');
+    }
+    try {
+      const { buffer, mimeType } = await getAssetFromEpub(id, assetPath);
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      return res.send(buffer);
+    } catch (e: unknown) {
+      return res.status(404).send('Asset not found');
     }
   });
 
