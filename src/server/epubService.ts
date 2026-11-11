@@ -437,6 +437,62 @@ export async function getParsedEpub(
   return parsedBook;
 }
 
+function getImageDimensions(buf: Buffer): { width: number; height: number } | null {
+  if (!buf || buf.length < 8) return null;
+  // PNG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+    if (buf.length >= 24) {
+      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+    }
+  }
+  // GIF
+  if (buf.toString('ascii', 0, 3) === 'GIF') {
+    if (buf.length >= 10) {
+      return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
+    }
+  }
+  // JPEG
+  if (buf[0] === 0xFF && buf[1] === 0xD8) {
+    let offset = 2;
+    while (offset < buf.length - 1) {
+      if (buf[offset] !== 0xFF) {
+        offset++;
+        continue;
+      }
+      const marker = buf[offset + 1];
+      if (marker === 0xD8 || marker === 0xD9 || marker === 0x00 || marker === 0xFF) {
+        offset++;
+        continue;
+      }
+      if ([0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB].includes(marker)) {
+        if (offset + 9 <= buf.length) {
+          const height = buf.readUInt16BE(offset + 5);
+          const width = buf.readUInt16BE(offset + 7);
+          return { width, height };
+        }
+      }
+      if (offset + 4 > buf.length) break;
+      const length = buf.readUInt16BE(offset + 2);
+      offset += 2 + length;
+    }
+  }
+  return null;
+}
+
+async function replaceAsync(
+  str: string,
+  regex: RegExp,
+  asyncFn: (...args: string[]) => Promise<string>
+): Promise<string> {
+  const matches: string[][] = [];
+  str.replace(regex, (...args) => {
+    matches.push(args);
+    return '';
+  });
+  const replacements = await Promise.all(matches.map((args) => asyncFn(...args)));
+  return str.replace(regex, () => replacements.shift()!);
+}
+
 // ---------------------------------------------------------------------------
 // Sanitizer & Asset Rewriter for Chapter HTML
 // ---------------------------------------------------------------------------
@@ -466,16 +522,37 @@ export async function getSanitizedChapterHtml(
   let content = bodyMatch ? bodyMatch[1] : rawHtml;
 
   // 2. Rewrite Image Sources: <img src="..."> and <image href="...">
-  content = content.replace(
-    /(<(?:img|image)[^>]+?(?:src|xlink:href|href)=["'])([^"']+)(["'][^>]*>)/gi,
-    (_full, prefix, srcUrl, suffix) => {
+  content = await replaceAsync(
+    content,
+    /(<(?:img|image)\b)([^>]*?)(?:src|xlink:href|href)=["']([^"']+)["']([^>]*>)/gi,
+    async (_full, tagPrefix, beforeSrc, srcUrl, afterSrc) => {
       // Don't rewrite absolute URLs or data URIs
       if (/^(?:https?:|\/\/|data:)/i.test(srcUrl)) {
-        return `${prefix}${srcUrl}${suffix}`;
+        return _full;
       }
       const resolved = path.posix.normalize(path.posix.join(chapterDir, srcUrl));
       const assetUrl = `/api/library/book/${bookId}/asset/${resolved}`;
-      return `${prefix}${assetUrl}${suffix}`;
+      let extraAttrs = ' loading="lazy" decoding="async"';
+
+      const hasWidth = /\bwidth\s*=/i.test(beforeSrc) || /\bwidth\s*=/i.test(afterSrc);
+      const hasHeight = /\bheight\s*=/i.test(beforeSrc) || /\bheight\s*=/i.test(afterSrc);
+      if (!hasWidth || !hasHeight) {
+        const fileInZip = parsed.zip.file(resolved) || parsed.zip.file(resolved.replace(/^\/+/, ''));
+        if (fileInZip) {
+          try {
+            const buf = await fileInZip.async('nodebuffer');
+            const dims = getImageDimensions(buf);
+            if (dims && dims.width > 0 && dims.height > 0) {
+              if (!hasWidth) extraAttrs += ` width="${dims.width}"`;
+              if (!hasHeight) extraAttrs += ` height="${dims.height}"`;
+            }
+          } catch {
+            // Ignore dimension read error
+          }
+        }
+      }
+
+      return `${tagPrefix}${beforeSrc}src="${assetUrl}"${extraAttrs}${afterSrc}`;
     }
   );
 
@@ -519,7 +596,7 @@ export async function getSanitizedChapterHtml(
     allowedAttributes: {
       '*': ['id', 'class', 'style', 'title', 'data-chapter-link', 'data-anchor'],
       a: ['href', 'name', 'target', 'rel', 'data-chapter-link', 'data-anchor'],
-      img: ['src', 'alt', 'title', 'width', 'height', 'loading'],
+      img: ['src', 'alt', 'title', 'width', 'height', 'loading', 'decoding'],
     },
     allowedSchemes: ['http', 'https', 'data'],
     allowProtocolRelative: false,

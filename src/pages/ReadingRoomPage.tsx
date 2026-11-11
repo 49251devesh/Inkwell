@@ -705,6 +705,17 @@ const ReaderView: React.FC<{
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pendingAnchorRef = useRef<string | null>(null);
+  const restoredChapterRef = useRef<string | null>(null);
+  const rafId = useRef<number | null>(null);
+
+  // Lock body scroll while ReaderView is mounted so there is exactly ONE scroll container
+  useEffect(() => {
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = origOverflow;
+    };
+  }, []);
 
   // 1. Load reader settings & initial progress from Dexie
   useEffect(() => {
@@ -836,38 +847,39 @@ const ReaderView: React.FC<{
         }
       } catch (err: unknown) {
         console.warn('Chapter load error:', err);
-        if (!chapterData) {
-          setError(err instanceof Error ? err.message : 'Could not load chapter content.');
-        }
+        setError((prev) => prev || (err instanceof Error ? err.message : 'Could not load chapter content.'));
       } finally {
         setLoadingChapter(false);
       }
     },
-    [book.id, chapterData]
+    [book.id]
   );
 
   useEffect(() => {
+    restoredChapterRef.current = null;
     if (activeChapterId && !usePlainTextFallback) {
       loadChapter(activeChapterId);
     }
   }, [activeChapterId, loadChapter, usePlainTextFallback]);
 
-  // 4. Scroll position restoration & anchor navigation
+  // 4. Scroll position restoration & anchor navigation (restores once when chapter renders)
   useEffect(() => {
-    if (!scrollRef.current || loadingChapter) return;
+    if (!scrollRef.current || !chapterData || restoredChapterRef.current === activeChapterId) return;
 
     if (pendingAnchorRef.current) {
       const anchorEl = scrollRef.current.querySelector(
         `#${CSS.escape(pendingAnchorRef.current)}, [name="${CSS.escape(pendingAnchorRef.current)}"]`
       );
       if (anchorEl) {
-        anchorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        restoredChapterRef.current = activeChapterId;
+        anchorEl.scrollIntoView({ behavior: 'auto', block: 'start' });
         pendingAnchorRef.current = null;
         return;
       }
     }
 
-    // Restore saved scroll position for this chapter
+    // Restore saved scroll position once for this chapter
+    restoredChapterRef.current = activeChapterId;
     readingRoomDb.readingProgress.get(book.id).then((progress) => {
       if (progress && progress.chapterId === activeChapterId && scrollRef.current) {
         scrollRef.current.scrollTop = progress.scrollPosition;
@@ -875,23 +887,35 @@ const ReaderView: React.FC<{
         scrollRef.current.scrollTop = 0;
       }
     });
-  }, [activeChapterId, chapterData, loadingChapter, book.id]);
+  }, [activeChapterId, chapterData, book.id]);
 
-  // 5. Debounced scroll position saving
+  // 5. Throttled scroll position saving with requestAnimationFrame
   const handleScroll = useCallback(() => {
-    clearTimeout(scrollSaveTimer.current);
-    scrollSaveTimer.current = setTimeout(() => {
+    if (rafId.current !== null) return;
+    rafId.current = requestAnimationFrame(() => {
+      rafId.current = null;
       if (!scrollRef.current || !manifest) return;
-      const chapterIdx = manifest.chapters.findIndex((c) => c.id === activeChapterId);
-      readingRoomDb.readingProgress.put({
-        bookId: book.id,
-        chapterId: activeChapterId,
-        chapterIndex: chapterIdx >= 0 ? chapterIdx : 0,
-        scrollPosition: scrollRef.current.scrollTop,
-        updatedAt: Date.now(),
-      });
-    }, 500);
+      clearTimeout(scrollSaveTimer.current);
+      scrollSaveTimer.current = setTimeout(() => {
+        if (!scrollRef.current || !manifest) return;
+        const chapterIdx = manifest.chapters.findIndex((c) => c.id === activeChapterId);
+        readingRoomDb.readingProgress.put({
+          bookId: book.id,
+          chapterId: activeChapterId,
+          chapterIndex: chapterIdx >= 0 ? chapterIdx : 0,
+          scrollPosition: scrollRef.current.scrollTop,
+          updatedAt: Date.now(),
+        });
+      }, 500);
+    });
   }, [book.id, activeChapterId, manifest]);
+
+  useEffect(() => {
+    return () => {
+      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
+      clearTimeout(scrollSaveTimer.current);
+    };
+  }, []);
 
   // 6. Handle click inside rendered chapter HTML (Zoom image, internal chapter link)
   const handleContentClick = useCallback(
@@ -984,7 +1008,7 @@ const ReaderView: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col"
+      className="inkwell-reader-root fixed inset-0 z-50 flex flex-col h-[100vh] h-[100dvh] max-h-[100vh] max-h-[100dvh]"
       role="dialog"
       aria-modal="true"
       aria-label={`Reading: ${book.title}`}
@@ -1198,7 +1222,7 @@ const ReaderView: React.FC<{
         ref={scrollRef}
         onScroll={handleScroll}
         onClick={handleContentClick}
-        className="flex-1 overflow-y-auto px-4 sm:px-10 py-8"
+        className="inkwell-reader-scroll flex-1 overflow-y-auto px-4 sm:px-10 py-8"
       >
         <div className={`mx-auto ${lineWidthClasses[lineWidth]}`}>
           {/* Skeletons while loading */}
@@ -1406,7 +1430,7 @@ export const ReadingRoomPage: React.FC = () => {
           <motion.div
             key="reader"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            animate={{ opacity: 1, transitionEnd: { transform: 'none' } }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
           >
