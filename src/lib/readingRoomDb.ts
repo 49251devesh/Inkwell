@@ -24,9 +24,29 @@ export interface FavoriteBook {
 
 export interface ReadingProgress {
   bookId: number;        // primary key — one row per book
+  chapterId?: string;    // chapter ID (e.g. 'item4' or 'ch-1')
   chapterIndex: number;  // 0-based chapter index last visited
   scrollPosition: number; // scrollTop in pixels
   updatedAt: number;     // Date.now() epoch ms
+}
+
+export interface CachedManifest {
+  id: number;
+  data: any; // BookManifest
+  updatedAt: number;
+}
+
+export interface CachedChapter {
+  id: string; // `${bookId}-${chapterId}`
+  bookId: number;
+  chapterId: string;
+  data: {
+    title: string;
+    html: string;
+    nextChapterId: string | null;
+    prevChapterId: string | null;
+  };
+  updatedAt: number;
 }
 
 export interface ReaderSettings {
@@ -43,6 +63,8 @@ class ReadingRoomDatabase extends Dexie {
   favorites!: Table<FavoriteBook, number>;
   readingProgress!: Table<ReadingProgress, number>;
   readerSettings!: Table<ReaderSettings, string>;
+  cachedManifests!: Table<CachedManifest, number>;
+  cachedChapters!: Table<CachedChapter, string>;
 
   constructor() {
     super('InkwellReadingRoom');
@@ -51,6 +73,14 @@ class ReadingRoomDatabase extends Dexie {
       favorites: 'id, addedAt',
       readingProgress: 'bookId, updatedAt',
       readerSettings: 'id',
+    });
+
+    this.version(2).stores({
+      favorites: 'id, addedAt',
+      readingProgress: 'bookId, updatedAt',
+      readerSettings: 'id',
+      cachedManifests: 'id, updatedAt',
+      cachedChapters: 'id, bookId, updatedAt',
     });
   }
 }
