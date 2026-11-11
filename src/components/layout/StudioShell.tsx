@@ -12,6 +12,7 @@ import {
   Sun,
   Users,
   Database,
+  BookMarked,
 } from 'lucide-react';
 import { useThemeTransition } from '../../hooks/useThemeTransition';
 import { DataArchiveDialog } from '../library/DataArchiveDialog';
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/characters', label: 'Characters', icon: Users, end: false },
   { to: '/world', label: 'World', icon: Compass, end: false },
   { to: '/analytics', label: 'Ledger', icon: BarChart2, end: false },
+  { to: '/reading-room', label: 'Reading Room', icon: BookMarked, end: false },
 ];
 
 export const StudioShell: React.FC<{ children: React.ReactNode }> = ({
@@ -233,7 +235,7 @@ export const StudioShell: React.FC<{ children: React.ReactNode }> = ({
             borderColor: 'var(--border-brass)',
           }}
         >
-          <div className="grid grid-cols-6 h-14">
+          <div className="grid grid-cols-7 h-14">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = item.end

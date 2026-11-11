@@ -14,9 +14,10 @@ import { useInkwell } from '../store/inkwellStore';
 import { useToast } from '../hooks/useToast';
 import { formatWordCount, toRoman } from '../lib/formatters';
 import { InkDryingIndicator, InkSaveState } from '../components/desk/InkDryingIndicator';
-import { DeskToolbar } from '../components/desk/DeskToolbar';
+import { DeskToolbar, AIMode } from '../components/desk/DeskToolbar';
 import { ChapterDrawer } from '../components/desk/ChapterDrawer';
 import { AIMarginPanel } from '../components/desk/AIMarginPanel';
+import { AIConversationalDrawer } from '../components/desk/AIConversationalDrawer';
 import { ManuscriptEditor, ManuscriptEditorHandle } from '../components/desk/ManuscriptEditor';
 
 export const DeskPage: React.FC = () => {
@@ -92,11 +93,51 @@ export const DeskPage: React.FC = () => {
   // Desk State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+  const [aiMode, setAIMode] = useState<AIMode>(() => {
+    try {
+      const saved = localStorage.getItem('inkwell_ai_mode');
+      if (saved === 'margin' || saved === 'companion') return saved;
+    } catch {}
+    return 'companion';
+  });
+
+  const handleSelectAIMode = useCallback((mode: AIMode) => {
+    setAIMode(mode);
+    try {
+      localStorage.setItem('inkwell_ai_mode', mode);
+    } catch {}
+  }, []);
+
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [dimParagraphs, setDimParagraphs] = useState(false);
   const [selectedText, setSelectedText] = useState('');
   const [saveStatus, setSaveStatus] = useState<InkSaveState>('dried');
   const [lastSavedTime, setLastSavedTime] = useState<Date | null>(null);
+
+  // Characters & World context for AI collaborators
+  const projectCharacters = useMemo(() => {
+    if (!currentProject) return [];
+    return data.characters.filter((c) => c.projectId === currentProject.id);
+  }, [currentProject, data.characters]);
+
+  const projectWorldNotes = useMemo(() => {
+    if (!currentProject) return [];
+    const lore = data.lore
+      .filter((l) => l.projectId === currentProject.id)
+      .map((l) => ({
+        title: l.title,
+        category: l.category,
+        description: l.summary,
+      }));
+    const locations = data.locations
+      .filter((loc) => loc.projectId === currentProject.id)
+      .map((loc) => ({
+        name: loc.name,
+        category: 'Location',
+        description: `${loc.region ? `Region: ${loc.region}. ` : ''}${loc.description}`,
+      }));
+    return [...lore, ...locations];
+  }, [currentProject, data.lore, data.locations]);
 
   // Session words tracking
   const initialChapterWordsRef = useRef<number | null>(null);
@@ -370,7 +411,7 @@ export const DeskPage: React.FC = () => {
               <InkDryingIndicator status={saveStatus} lastSavedAt={lastSavedTime} />
             </div>
 
-            {/* AI Margin Notes Trigger Button */}
+            {/* AI Assistant Mode Trigger Button */}
             <button
               type="button"
               onClick={() => setIsAIPanelOpen((prev) => !prev)}
@@ -380,12 +421,27 @@ export const DeskPage: React.FC = () => {
                 backgroundColor: isAIPanelOpen ? 'var(--accent-primary)' : 'var(--bg-surface)',
                 color: isAIPanelOpen ? '#F4EFE5' : 'var(--text-primary)',
               }}
-              title="Open AI Margin Notes & Editorial Critique"
+              title={
+                aiMode === 'companion'
+                  ? 'Open Atelier Companion (Conversational Dramaturg)'
+                  : 'Open AI Margin Notes & Editorial Critique'
+              }
             >
-              <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
-              <span className="hidden xl:inline">AI Margin Notes</span>
-              <span className="hidden sm:inline xl:hidden">Margin Notes</span>
-              <span className="sm:hidden">Notes</span>
+              {aiMode === 'companion' ? (
+                <>
+                  <Feather className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+                  <span className="hidden xl:inline">Atelier Companion</span>
+                  <span className="hidden sm:inline xl:hidden">Companion</span>
+                  <span className="sm:hidden">Chat</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
+                  <span className="hidden xl:inline">AI Margin Notes</span>
+                  <span className="hidden sm:inline xl:hidden">Margin Notes</span>
+                  <span className="sm:hidden">Notes</span>
+                </>
+              )}
             </button>
 
             {/* Focus Mode Trigger Button */}
@@ -422,11 +478,13 @@ export const DeskPage: React.FC = () => {
           onToggleAIPanel={() => setIsAIPanelOpen((prev) => !prev)}
           isFocusMode={isFocusMode}
           isAIPanelOpen={isAIPanelOpen}
+          aiMode={aiMode}
+          onSelectAIMode={handleSelectAIMode}
         />
       </div>
 
       {/* =====================================================================
-          3. TACTILE FLOATING MARGIN TABS (CONTENTS & AI NOTES)
+          3. TACTILE FLOATING MARGIN TABS (CONTENTS & AI ASSISTANT)
          ===================================================================== */}
       {/* Left Margin Tab: Table of Contents */}
       {!isFocusMode && !isDrawerOpen && (
@@ -448,7 +506,7 @@ export const DeskPage: React.FC = () => {
         </button>
       )}
 
-      {/* Right Margin Tab: AI Margin Notes Bookmark */}
+      {/* Right Margin Tab: AI Assistant Bookmark (Margin vs Companion) */}
       {!isFocusMode && !isAIPanelOpen && (
         <button
           type="button"
@@ -460,10 +518,19 @@ export const DeskPage: React.FC = () => {
             borderColor: 'var(--border-brass)',
             color: 'var(--text-primary)',
           }}
-          title="Open AI Margin Notes Panel"
+          title={aiMode === 'companion' ? 'Open Atelier Companion Drawer' : 'Open AI Margin Notes Panel'}
         >
-          <Sparkles className="w-3.5 h-3.5 rotate-90" style={{ color: 'var(--accent-primary)' }} />
-          <span>❦ AI Margin Notes</span>
+          {aiMode === 'companion' ? (
+            <>
+              <Feather className="w-3.5 h-3.5 rotate-90" style={{ color: 'var(--accent-primary)' }} />
+              <span>❦ Atelier Companion</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5 rotate-90" style={{ color: 'var(--accent-primary)' }} />
+              <span>❦ AI Margin Notes</span>
+            </>
+          )}
         </button>
       )}
 
@@ -587,7 +654,7 @@ export const DeskPage: React.FC = () => {
       </footer>
 
       {/* =====================================================================
-          6. SLIDING CHAPTER DRAWER & AI MARGIN PANEL
+          6. SLIDING CHAPTER DRAWER & AI ASSISTANT PANELS
          ===================================================================== */}
       <ChapterDrawer
         isOpen={isDrawerOpen}
@@ -602,8 +669,9 @@ export const DeskPage: React.FC = () => {
         onSwitchProject={handleSwitchProject}
       />
 
+      {/* Mode A: In-line Editorial Margin Notes */}
       <AIMarginPanel
-        isOpen={isAIPanelOpen}
+        isOpen={isAIPanelOpen && aiMode === 'margin'}
         onClose={() => setIsAIPanelOpen(false)}
         selectedText={selectedText}
         contextText={activeChapter.content}
@@ -612,6 +680,19 @@ export const DeskPage: React.FC = () => {
         projectGenre={currentProject.genre}
         onInsertText={handleInsertAIContent}
         onReplaceText={handleReplaceAIContent}
+      />
+
+      {/* Mode B: Conversational Dramaturg Companion Drawer */}
+      <AIConversationalDrawer
+        isOpen={isAIPanelOpen && aiMode === 'companion'}
+        onClose={() => setIsAIPanelOpen(false)}
+        currentChapterText={activeChapter.content}
+        chapterTitle={activeChapter.title}
+        projectTitle={currentProject.title}
+        projectGenre={currentProject.genre}
+        characters={projectCharacters}
+        worldNotes={projectWorldNotes}
+        onInsertText={handleInsertAIContent}
       />
     </div>
   );

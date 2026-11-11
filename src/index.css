@@ -88,6 +88,7 @@
   --bg-canvas: #1A1916;
   --bg-surface: #24231F;
   --bg-recessed: #141310;
+  --parchment-raised: #2A2823;
   --bg-shelf: #2D211A;
   --bg-shelf-edge: #1B130E;
 
@@ -99,6 +100,7 @@
   --accent-primary-hover: #BA6A73;
   --accent-brass: #C8A16E;
   --accent-brass-bright: #D4BC98;
+  --brass-readable: #D4BC98;
 
   --burgundy-wash: rgba(166, 90, 98, 0.16);
   --border-hairline: rgba(244, 239, 229, 0.12);

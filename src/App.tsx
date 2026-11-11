@@ -18,6 +18,7 @@ import { CharacterStudioPage } from './pages/CharacterStudioPage';
 import { WorldBuilderPage } from './pages/WorldBuilderPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { PlaceholderStudioPage } from './pages/PlaceholderStudioPage';
+import { ReadingRoomPage } from './pages/ReadingRoomPage';
 
 const PageTurnFrame: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -97,6 +98,14 @@ const AnimatedStudioRoutes: React.FC = () => {
           element={
             <PageTurnFrame>
               <AnalyticsPage />
+            </PageTurnFrame>
+          }
+        />
+        <Route
+          path="/reading-room"
+          element={
+            <PageTurnFrame>
+              <ReadingRoomPage />
             </PageTurnFrame>
           }
         />

@@ -18,6 +18,7 @@ async function startServer() {
 
   // Initialize Gemini SDK if API key is provided
   const apiKey = process.env.GEMINI_API_KEY;
+  const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   let ai: GoogleGenAI | null = null;
   if (apiKey) {
     ai = new GoogleGenAI({
@@ -76,7 +77,7 @@ Instructions:
 Ensure the relationships reference the exact names of other characters in the cast so they form a connected directed graph.`;
 
           const geminiPromise = ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: GEMINI_MODEL,
             contents: prompt,
             config: {
               responseMimeType: 'application/json',
@@ -145,6 +146,371 @@ Ensure the relationships reference the exact names of other characters in the ca
       const message = err instanceof Error ? err.message : 'Unknown generation failure';
       console.error('Failed to generate character map:', message);
       res.status(500).json({ error: message });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // API: Reading Room — Gutendex / Project Gutenberg proxy
+  // ---------------------------------------------------------------------------
+
+  // Simple in-memory caches (TTL-based)
+  const searchCache = new Map<string, { data: unknown; ts: number }>();
+  const bookCache = new Map<number, { data: unknown; ts: number }>();
+  const SEARCH_TTL = 5 * 60 * 1000;  // 5 minutes
+  const BOOK_TTL   = 10 * 60 * 1000; // 10 minutes
+
+  type GutendexAuthor = { name: string; birth_year: number | null; death_year: number | null };
+  type GutendexBook = {
+    id: number;
+    title: string;
+    authors: GutendexAuthor[];
+    subjects: string[];
+    bookshelves: string[];
+    languages: string[];
+    formats: Record<string, string>;
+  };
+
+  function mapBook(b: GutendexBook) {
+    const textUrl =
+      b.formats['text/plain; charset=utf-8'] ||
+      b.formats['text/plain; charset=us-ascii'] ||
+      b.formats['text/plain'] ||
+      '';
+    const coverUrl = b.formats['image/jpeg'] || '';
+    return {
+      id: b.id,
+      title: b.title,
+      authors: b.authors.map((a) => a.name),
+      subjects: (b.subjects || []).slice(0, 10),
+      coverUrl,
+      language: b.languages || [],
+      textUrl,
+    };
+  }
+
+  async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: controller.signal });
+      clearTimeout(timer);
+      return r;
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+  }
+
+  // GET /api/library/search?q=<query>
+  app.get('/api/library/search', async (req: Request, res: Response) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (!q || q.length > 200) {
+      return res.status(400).json({ error: 'Query parameter "q" must be 1–200 characters.' });
+    }
+    const cacheKey = q.toLowerCase();
+    const cached = searchCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < SEARCH_TTL) {
+      return res.json(cached.data);
+    }
+    try {
+      const r = await fetchWithTimeout(
+        `https://gutendex.com/books?search=${encodeURIComponent(q)}`,
+        8000
+      );
+      if (!r.ok) {
+        return res.status(502).json({ error: `Gutendex returned ${r.status}. Try again.` });
+      }
+      const json = (await r.json()) as { results: GutendexBook[] };
+      const data = (json.results || []).map(mapBook);
+      searchCache.set(cacheKey, { data, ts: Date.now() });
+      return res.json(data);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      console.error('[library/search]', msg);
+      return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
+  });
+
+  // GET /api/library/book/:id
+  app.get('/api/library/book/:id', async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id ?? '', 10);
+    if (!id || id <= 0) {
+      return res.status(400).json({ error: 'Book id must be a positive integer.' });
+    }
+    const cached = bookCache.get(id);
+    if (cached && Date.now() - cached.ts < BOOK_TTL) {
+      return res.json(cached.data);
+    }
+    try {
+      const r = await fetchWithTimeout(`https://gutendex.com/books/${id}`, 8000);
+      if (!r.ok) {
+        return res.status(r.status === 404 ? 404 : 502).json({
+          error: r.status === 404 ? 'Book not found in Gutenberg.' : `Gutendex returned ${r.status}.`,
+        });
+      }
+      const data = mapBook((await r.json()) as GutendexBook);
+      bookCache.set(id, { data, ts: Date.now() });
+      return res.json(data);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      console.error('[library/book]', msg);
+      return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
+  });
+
+  // GET /api/library/text/:id
+  // Fetches the plain-text from Project Gutenberg, strips header/footer, splits into chapters
+  app.get('/api/library/text/:id', async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id ?? '', 10);
+    if (!id || id <= 0) {
+      return res.status(400).json({ error: 'Book id must be a positive integer.' });
+    }
+    // 1. Resolve textUrl from book detail
+    let textUrl = '';
+    let bookTitle = 'Untitled';
+    try {
+      const cached = bookCache.get(id);
+      let bookData: { textUrl: string; title: string } | null = null;
+      if (cached && Date.now() - cached.ts < BOOK_TTL) {
+        bookData = cached.data as { textUrl: string; title: string };
+      } else {
+        const r = await fetchWithTimeout(`https://gutendex.com/books/${id}`, 8000);
+        if (!r.ok) {
+          return res.status(r.status === 404 ? 404 : 502).json({ error: 'Book not found.' });
+        }
+        const raw = (await r.json()) as GutendexBook;
+        bookData = mapBook(raw);
+        bookCache.set(id, { data: bookData, ts: Date.now() });
+      }
+      textUrl = bookData.textUrl;
+      bookTitle = bookData.title;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      return res.status(502).json({ error: `Could not resolve book: ${msg}` });
+    }
+
+    if (!textUrl) {
+      return res.status(404).json({ error: 'No plain-text version available for this book.' });
+    }
+
+    // 2. Fetch the actual text file
+    let rawText = '';
+    try {
+      const r = await fetchWithTimeout(textUrl, 20000);
+      if (!r.ok) {
+        return res.status(502).json({ error: `Text file returned ${r.status}.` });
+      }
+      rawText = await r.text();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
+      return res.status(502).json({ error: `Could not fetch text: ${msg}` });
+    }
+
+    // 3. Strip Project Gutenberg header & footer
+    const startMarker = /\*\*\* ?START OF (THE|THIS) PROJECT GUTENBERG/i;
+    const endMarker   = /\*\*\* ?END OF (THE|THIS) PROJECT GUTENBERG/i;
+
+    let body = rawText;
+    const startMatch = startMarker.exec(rawText);
+    if (startMatch) {
+      // Skip to end of that line
+      const afterStart = rawText.indexOf('\n', startMatch.index);
+      body = afterStart > -1 ? rawText.slice(afterStart + 1) : rawText;
+    }
+    const endMatch = endMarker.exec(body);
+    if (endMatch) {
+      body = body.slice(0, endMatch.index).trimEnd();
+    }
+
+    // 4. Split into chapters
+    // Matches: CHAPTER I, Chapter 1, Chapter I., PART ONE, I., II., etc.
+    const chapterPattern = /^(CHAPTER|Chapter|PART|Part|BOOK|Book)\s+([IVXLCDM]+|[0-9]+|[A-Z][a-z]*)[.:—\s]?/m;
+    const romanPattern   = /^([IVXLCDM]{1,6})\.\s*$/m;
+
+    const lines = body.split('\n');
+    const chapters: { title: string; content: string }[] = [];
+    let currentTitle = '';
+    let currentLines: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (chapterPattern.test(trimmed) || (romanPattern.test(trimmed) && trimmed.length <= 10)) {
+        if (currentLines.some((l) => l.trim())) {
+          chapters.push({ title: currentTitle, content: currentLines.join('\n').trim() });
+        }
+        currentTitle = trimmed;
+        currentLines = [];
+      } else {
+        currentLines.push(line);
+      }
+    }
+    // Push last segment
+    if (currentLines.some((l) => l.trim())) {
+      chapters.push({ title: currentTitle, content: currentLines.join('\n').trim() });
+    }
+
+    // If no chapters detected, return the whole body as one chapter
+    if (chapters.length === 0) {
+      chapters.push({ title: bookTitle, content: body.trim() });
+    }
+
+    return res.json({ title: bookTitle, chapters });
+  });
+
+  // ---------------------------------------------------------------------------
+  // API: Streaming Conversational Literary Dramaturg & AI Writing Partner
+  // ---------------------------------------------------------------------------
+  app.post('/api/chat', async (req: Request, res: Response) => {
+    try {
+      const {
+        messages,
+        currentChapter = '',
+        characters = [],
+        worldNotes = [],
+        projectTitle = 'Untitled Manuscript',
+        projectGenre = 'Literary Fiction',
+      } = req.body || {};
+
+      // 1. Validate request body
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return res.status(400).json({
+          error: 'Invalid request: "messages" must be a non-empty array of message objects.',
+        });
+      }
+
+      const lastMessage = messages[messages.length - 1];
+      if (!lastMessage || typeof lastMessage.content !== 'string' || !lastMessage.content.trim()) {
+        return res.status(400).json({
+          error: 'Invalid request: the latest message must contain a non-empty content string.',
+        });
+      }
+
+      // 2. Trim and assemble context to safe lengths
+      const rawChapterText =
+        typeof currentChapter === 'string'
+          ? currentChapter
+          : `${currentChapter?.title ? `Chapter: ${currentChapter.title}\n` : ''}${currentChapter?.content || ''}`;
+      const chapterExcerpt = rawChapterText.trim().slice(0, 8000);
+
+      const characterContext = Array.isArray(characters)
+        ? characters
+            .slice(0, 10)
+            .map(
+              (c: { name?: string; role?: string; traits?: string[]; motivation?: string; arc?: string; relationships?: string }) =>
+                `• ${c.name || 'Unnamed'}${c.role ? ` (${c.role})` : ''}: ${c.motivation || 'Deep motivation pending'}. Arc: ${c.arc || 'Evolving'}. Relationships: ${c.relationships || 'None listed'}`
+            )
+            .join('\n')
+            .slice(0, 3000)
+        : typeof characters === 'string'
+        ? characters.slice(0, 3000)
+        : '';
+
+      const worldContext = Array.isArray(worldNotes)
+        ? worldNotes
+            .slice(0, 10)
+            .map(
+              (w: { title?: string; name?: string; category?: string; description?: string; lore?: string }) =>
+                `• ${w.title || w.name || 'Landmark'}${w.category ? ` [${w.category}]` : ''}: ${w.description || w.lore || ''}`
+            )
+            .join('\n')
+            .slice(0, 3000)
+        : typeof worldNotes === 'string'
+        ? worldNotes.slice(0, 3000)
+        : '';
+
+      // Set Server-Sent Events headers for response streaming
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+
+      const systemInstruction = `You are a master literary editor and dramaturg collaborating with an author in their private candlelit writing atelier.
+Your sacred duty is to respect the author's distinctive voice, prose rhythm, and narrative intentions.
+Never rewrite, replace, or dictate their prose unless they explicitly ask you to rewrite a specific passage.
+Provide perceptive dramaturgical critique, character psychology insights, narrative tension analysis, sensory atmosphere suggestions, and continuity observations.
+Ground your guidance in the provided story context, character dossiers, and world lore where applicable.
+Maintain a warm, encouraging, intellectually rigorous tone worthy of a classical bookmaker and literary scholar.`;
+
+      // 3. Attempt Gemini streaming if AI client is initialized
+      if (ai) {
+        try {
+          // Construct formatted conversation contents alternating user / model
+          const formattedContents = messages
+            .filter((m: { role?: string; content?: string }) => m && typeof m.content === 'string')
+            .map((m: { role?: string; content: string }, idx: number) => {
+              const role = m.role === 'assistant' || m.role === 'model' ? 'model' : 'user';
+              let textContent = m.content;
+
+              // Inject manuscript dossier context into the opening user turn
+              if (idx === 0 && role === 'user') {
+                const dossierHeader = [
+                  `[MANUSCRIPT DOSSIER: "${projectTitle}" (${projectGenre})]`,
+                  characterContext ? `[DRAMATIS PERSONAE]:\n${characterContext}` : '',
+                  worldContext ? `[WORLD & LORE]:\n${worldContext}` : '',
+                  chapterExcerpt ? `[CURRENT CHAPTER EXCERPT]:\n${chapterExcerpt}` : '',
+                  '---',
+                  `Author's Query: ${textContent}`,
+                ]
+                  .filter(Boolean)
+                  .join('\n\n');
+                textContent = dossierHeader;
+              }
+
+              return {
+                role,
+                parts: [{ text: textContent }],
+              };
+            });
+
+          const responseStream = await ai.models.generateContentStream({
+            model: GEMINI_MODEL,
+            contents: formattedContents,
+            config: {
+              systemInstruction,
+            },
+          });
+
+          for await (const chunk of responseStream) {
+            const text = chunk.text;
+            if (text) {
+              res.write(`data: ${JSON.stringify({ text })}\n\n`);
+            }
+          }
+
+          res.write('data: [DONE]\n\n');
+          return res.end();
+        } catch (geminiErr) {
+          console.warn('Gemini chat streaming failed or timed out; engaging offline dramaturg:', geminiErr);
+          // Fall through to offline companion
+        }
+      }
+
+      // 4. Graceful offline fallback response
+      const offlineReply = generateOfflineEditorialChat(
+        lastMessage.content,
+        chapterExcerpt,
+        projectTitle,
+        projectGenre,
+        characterContext
+      );
+
+      res.write(
+        `data: ${JSON.stringify({
+          text: `[Offline Editorial Dramaturg]\n\n${offlineReply}`,
+          offline: true,
+        })}\n\n`
+      );
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Chat server error';
+      console.error('Failure in /api/chat:', message);
+      if (!res.headersSent) {
+        return res.status(500).json({ error: message });
+      }
+      res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
     }
   });
 
@@ -318,6 +684,72 @@ function generateStoryCharactersFallback(
       notes: 'Carries a cane tipped with an ivory carving of a raven.',
     },
   ];
+}
+
+// -----------------------------------------------------------------------------
+// Offline Editorial Dramaturg Fallback Generator
+// -----------------------------------------------------------------------------
+function generateOfflineEditorialChat(
+  query: string,
+  chapterExcerpt: string,
+  title: string,
+  genre: string,
+  charactersContext: string
+): string {
+  const lowerQuery = query.toLowerCase();
+
+  if (lowerQuery.includes('twist') || lowerQuery.includes('brainstorm')) {
+    return `Here are three dramaturgical complications tailored to "${title}" (${genre}):
+
+1. **The Suppressed Ledger / Stolen Proof**: A seemingly loyal ally reveals that they have concealed a critical document or artifact—not out of malice, but to shield someone close to the protagonist from scandal.
+2. **The Inverted Warning**: A message or omen previously interpreted as a threat from an adversary turns out to be a desperate appeal for assistance or a hidden confession.
+3. **The Unforeseen Debt**: An outside authority or patron arrives to enforce an ancient or forgotten pact, forcing the protagonist to choose between preserving their reputation and saving an innocent companion.
+
+*Dramaturg Note*: Ensure this complication raises emotional friction rather than merely accelerating external plot mechanics. Which of these avenues aligns closest with your vision for this chapter?`;
+  }
+
+  if (lowerQuery.includes('prose') || lowerQuery.includes('improve') || lowerQuery.includes('passage')) {
+    return `Appraising the prose cadence for "${title}":
+
+• **Rhythmic Variety**: Alternate expansive, multi-clause periods during contemplative pauses with terse, sensory fragments when narrative pressure mounts.
+• **Sensory Particulars**: Ground introspective moments in tangible textures—the chill of an iron key, the rasp of dry parchment, the flicker of guttering candlelight, or the sharp scent of bitter ink.
+• **Verbal Torque**: Check for passive constructions ("was feeling", "could be seen") and recast them into active, sensory verbs that carry psychological momentum.
+
+*Would you like to examine a specific paragraph together to test these cadences?*`;
+  }
+
+  if (lowerQuery.includes('continuity') || lowerQuery.includes('check')) {
+    return `Continuity appraisal for "${title}":
+
+• **Character Voice & Agency**: Check that any active characters retain their distinctive speech rhythms, physical habits, and underlying objectives rather than merely serving plot exposition.
+• **Atmospheric Consistency**: Verify that ambient illumination, spatial coordinates, and physical props (timepieces, keys, correspondence) remain consistent with prior scenes.
+• **Knowledge Asymmetry**: Clarify precisely what each person knows versus what they merely suspect. The strongest dramatic tension springs from unspoken secrets between allies.
+
+*Let me know if there is a specific timeline event or character motivation you wish to cross-reference.*`;
+  }
+
+  if (lowerQuery.includes('summarize') || lowerQuery.includes('scene')) {
+    return `Dramaturgical Scene Blueprint for "${title}":
+
+• **Scene Objective**: What does the protagonist enter the scene seeking, and what price are they willing to pay to obtain it?
+• **The Point of Resistance**: Where does conflict arise—from external obstacles, environmental pressure, or internal moral hesitation?
+• **The Pivot**: The key sentence or action where the power balance or understanding shifts irreversibly.
+• **Narrative Residue**: The lingering consequence or unanswered question that drives the protagonist directly into the following chapter.
+
+*How does this balance reflect the arc you intend for this folio?*`;
+  }
+
+  // General literary editorial response
+  return `Regarding your inquiry on "${title}":
+
+Your instinct to examine this narrative beat closely is perceptive. Longform fiction thrives when character motivation and environmental pressure converge with sensory specificity.
+
+Consider these three editorial angles:
+1. **The Stakes**: What does your protagonist stand to lose if they hesitate or make the wrong choice in this moment?
+2. **The Subtext**: What is the emotional truth that neither character in the room is willing to state aloud?
+3. **Sensory Anchoring**: How can the immediate setting (shadows, drafts, texture of paper or brass) amplify the scene's emotional weight?
+
+Feel free to paste a specific excerpt or ask a targeted question about dialogue, pacing, or dramatic tension.`;
 }
 
 startServer();

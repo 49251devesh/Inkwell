@@ -9,10 +9,13 @@ import {
   Undo2,
   Redo2,
   Sparkles,
+  Feather,
   Maximize2,
   Minimize2,
   SplitSquareVertical,
 } from 'lucide-react';
+
+export type AIMode = 'margin' | 'companion';
 
 interface DeskToolbarProps {
   onFormat: (command: string, value?: string) => void;
@@ -21,6 +24,8 @@ interface DeskToolbarProps {
   onToggleAIPanel: () => void;
   isFocusMode: boolean;
   isAIPanelOpen: boolean;
+  aiMode?: AIMode;
+  onSelectAIMode?: (mode: AIMode) => void;
   canUndo?: boolean;
   canRedo?: boolean;
   className?: string;
@@ -33,6 +38,8 @@ export const DeskToolbar: React.FC<DeskToolbarProps> = ({
   onToggleAIPanel,
   isFocusMode,
   isAIPanelOpen,
+  aiMode = 'companion',
+  onSelectAIMode,
   canUndo = true,
   canRedo = true,
   className = '',
@@ -162,22 +169,58 @@ export const DeskToolbar: React.FC<DeskToolbarProps> = ({
         </button>
       </div>
 
-      {/* Tools: AI Margin Assistant & Focus Mode */}
-      <div className="flex items-center gap-1 pl-1">
-        <button
-          type="button"
-          onClick={onToggleAIPanel}
-          title="AI Margin Assistant (Notes & Critiques)"
-          aria-label="Toggle AI Margin Notes"
-          className="px-2.5 py-1 text-xs font-manuscript rounded inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-          style={{
-            backgroundColor: isAIPanelOpen ? 'var(--accent-primary)' : 'transparent',
-            color: isAIPanelOpen ? '#F4EFE5' : 'var(--text-primary)',
-          }}
+      {/* Tools: AI Mode Toggle (Margin vs Companion) & Focus Mode */}
+      <div className="flex items-center gap-1.5 pl-1">
+        {/* Literary Segmented AI Mode Switcher */}
+        <div
+          role="group"
+          aria-label="AI Writing Assistant Mode"
+          className="inline-flex items-center p-0.5 rounded border border-[var(--border-hairline)] bg-[var(--bg-recessed)]"
         >
-          <Sparkles className="w-3 h-3" strokeWidth={1.5} />
-          <span className="hidden sm:inline">Margin Notes</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (onSelectAIMode) onSelectAIMode('margin');
+              if (!isAIPanelOpen) onToggleAIPanel();
+            }}
+            title="Margin Notes mode: in-line editorial feedback and text rewrites"
+            aria-label="Margin Notes mode"
+            aria-pressed={aiMode === 'margin' && isAIPanelOpen}
+            className={`px-2 py-1 text-xs font-manuscript rounded-xs inline-flex items-center gap-1 transition-all cursor-pointer ${
+              aiMode === 'margin' && isAIPanelOpen
+                ? 'bg-[var(--accent-primary)] text-[#F4EFE5] shadow-xs'
+                : aiMode === 'margin'
+                ? 'text-[var(--accent-primary)] font-medium hover:bg-[var(--burgundy-wash)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--burgundy-wash)]'
+            }`}
+          >
+            <Sparkles className="w-3 h-3" strokeWidth={1.5} />
+            <span className="hidden sm:inline">Margin</span>
+          </button>
+
+          <span aria-hidden="true" className="text-[10px] select-none text-[var(--border-hairline)] px-0.5">·</span>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (onSelectAIMode) onSelectAIMode('companion');
+              if (!isAIPanelOpen) onToggleAIPanel();
+            }}
+            title="Companion mode: conversational literary dramaturg chat"
+            aria-label="Companion mode"
+            aria-pressed={aiMode === 'companion' && isAIPanelOpen}
+            className={`px-2 py-1 text-xs font-manuscript rounded-xs inline-flex items-center gap-1 transition-all cursor-pointer ${
+              aiMode === 'companion' && isAIPanelOpen
+                ? 'bg-[var(--accent-primary)] text-[#F4EFE5] shadow-xs'
+                : aiMode === 'companion'
+                ? 'text-[var(--accent-primary)] font-medium hover:bg-[var(--burgundy-wash)]'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--burgundy-wash)]'
+            }`}
+          >
+            <Feather className="w-3 h-3" strokeWidth={1.5} />
+            <span className="hidden sm:inline">Companion</span>
+          </button>
+        </div>
 
         <button
           type="button"
