@@ -6,6 +6,7 @@
    ========================================================================== */
 
 :root {
+  color-scheme: light;
   /* Core Literary Palette */
   --ivory: #F4EFE5;
   --aged-paper: #EAE2D2;
@@ -84,6 +85,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* Semantic Tokens — Midnight Library */
   --bg-canvas: #1A1916;
   --bg-surface: #24231F;
@@ -345,6 +347,11 @@ body {
 
 
 /* Subtle custom scrollbars for literary warmth */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-brass) var(--bg-recessed);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -361,6 +368,25 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-brass);
+}
+
+/* Form controls legibility across themes */
+select {
+  color-scheme: light;
+}
+
+.dark select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.dark select option {
+  background-color: #24231F;
+  color: #F4EFE5;
 }
 
 /* ==========================================================================

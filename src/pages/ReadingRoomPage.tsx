@@ -639,7 +639,7 @@ const ReaderView: React.FC<{
             onClick={() => setChapterIndex((i) => Math.max(0, i - 1))}
             disabled={chapterIndex === 0}
             aria-label="Previous chapter"
-            className="flex items-center gap-1 font-manuscript text-xs px-2 py-1 border rounded cursor-pointer disabled:opacity-40 hover:bg-[var(--burgundy-wash)] transition-colors"
+            className="flex items-center gap-1 font-manuscript text-xs px-2.5 py-1.5 border rounded cursor-pointer disabled:opacity-40 hover:bg-[var(--burgundy-wash)] transition-colors bg-[var(--bg-canvas)] dark:bg-[#1A1916]"
             style={{ borderColor: 'var(--border-hairline)', color: 'var(--text-secondary)' }}
           >
             <ChevronLeft className="w-3.5 h-3.5" /> Prev
@@ -648,11 +648,23 @@ const ReaderView: React.FC<{
             value={chapterIndex}
             onChange={(e) => setChapterIndex(Number(e.target.value))}
             aria-label="Jump to chapter"
-            className="flex-1 font-manuscript text-xs px-2 py-1 border rounded bg-transparent cursor-pointer"
-            style={{ borderColor: 'var(--border-hairline)', color: 'var(--text-primary)' }}
+            className="flex-1 font-manuscript text-xs px-2.5 py-1.5 border rounded cursor-pointer bg-[var(--bg-canvas)] dark:bg-[#1A1916] text-[var(--text-primary)] dark:text-[#F4EFE5] border-[var(--border-brass)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-primary)] [color-scheme:light] dark:[color-scheme:dark]"
+            style={{
+              borderColor: 'var(--border-brass)',
+              backgroundColor: 'var(--bg-canvas)',
+              color: 'var(--text-primary)',
+            }}
           >
             {bookText?.chapters.map((ch, i) => (
-              <option key={i} value={i}>
+              <option
+                key={i}
+                value={i}
+                className="bg-[var(--bg-surface)] dark:bg-[#24231F] text-[var(--text-primary)] dark:text-[#F4EFE5]"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                }}
+              >
                 {ch.title || `Chapter ${i + 1}`}
               </option>
             ))}
@@ -662,7 +674,7 @@ const ReaderView: React.FC<{
             onClick={() => setChapterIndex((i) => Math.min(totalChapters - 1, i + 1))}
             disabled={chapterIndex === totalChapters - 1}
             aria-label="Next chapter"
-            className="flex items-center gap-1 font-manuscript text-xs px-2 py-1 border rounded cursor-pointer disabled:opacity-40 hover:bg-[var(--burgundy-wash)] transition-colors"
+            className="flex items-center gap-1 font-manuscript text-xs px-2.5 py-1.5 border rounded cursor-pointer disabled:opacity-40 hover:bg-[var(--burgundy-wash)] transition-colors bg-[var(--bg-canvas)] dark:bg-[#1A1916]"
             style={{ borderColor: 'var(--border-hairline)', color: 'var(--text-secondary)' }}
           >
             Next <ChevronRight className="w-3.5 h-3.5" />
