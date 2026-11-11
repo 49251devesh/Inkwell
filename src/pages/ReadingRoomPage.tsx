@@ -211,6 +211,102 @@ const SpineCard: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
+// Typographic Cover Component (with fixed 2:3 aspect ratio & graceful fallback)
+// ---------------------------------------------------------------------------
+
+export const BookCover: React.FC<{
+  book: Pick<LibraryBook, 'id' | 'title' | 'authors' | 'coverUrl'>;
+  className?: string;
+  aspectRatioClass?: string;
+  imgClassName?: string;
+}> = ({ book, className = '', aspectRatioClass = 'aspect-[2/3]', imgClassName = '' }) => {
+  const [imgErr, setImgErr] = useState(false);
+  const palette = [
+    { bg: '#3E241E', border: '#B18A5A', spine: '#2A1713', text: '#F4EFE5', subtitle: '#D4BC98' }, // deep mahogany
+    { bg: '#1E2D3E', border: '#B18A5A', spine: '#131D28', text: '#F4EFE5', subtitle: '#B5CEE0' }, // navy morocco
+    { bg: '#1E3626', border: '#B18A5A', spine: '#122218', text: '#F4EFE5', subtitle: '#B8D9C0' }, // forest calf
+    { bg: '#4A2A38', border: '#B18A5A', spine: '#311A24', text: '#F4EFE5', subtitle: '#E0BED0' }, // imperial plum
+    { bg: '#3D3123', border: '#B18A5A', spine: '#261F16', text: '#F4EFE5', subtitle: '#D4C4AB' }, // aged walnut
+    { bg: '#482E1E', border: '#B18A5A', spine: '#2D1B10', text: '#F4EFE5', subtitle: '#DEC3AF' }, // terracotta umber
+    { bg: '#252528', border: '#B18A5A', spine: '#161618', text: '#F4EFE5', subtitle: '#CBCBCE' }, // charcoal buckram
+    { bg: '#472124', border: '#B18A5A', spine: '#2C1315', text: '#F4EFE5', subtitle: '#E6BDC0' }, // deep burgundy
+  ];
+  const theme = palette[Math.abs(book.id) % palette.length];
+  const authorName = (book.authors && book.authors[0]) || 'Unknown Author';
+
+  return (
+    <div
+      className={`relative w-full ${aspectRatioClass} rounded-sm overflow-hidden select-none bg-[var(--bg-canvas)] ${className}`}
+      style={{
+        backgroundColor: theme.bg,
+        boxShadow: '0 4px 14px rgba(0,0,0,0.24)',
+      }}
+    >
+      {book.coverUrl && !imgErr ? (
+        <img
+          src={book.coverUrl}
+          alt={book.title}
+          loading="lazy"
+          decoding="async"
+          onError={() => setImgErr(true)}
+          className={`w-full h-full object-cover transition-opacity duration-300 ${imgClassName}`}
+        />
+      ) : (
+        /* Typographic cover fallback with spine edge & brass border */
+        <div
+          className="absolute inset-0 p-2.5 sm:p-3 flex flex-col justify-between"
+          style={{
+            background: `linear-gradient(135deg, ${theme.bg} 0%, ${theme.spine} 100%)`,
+            border: `1px solid ${theme.border}40`,
+          }}
+        >
+          {/* Left spine highlight */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-2 pointer-events-none"
+            style={{
+              background: 'linear-gradient(to right, rgba(255,255,255,0.14) 0%, rgba(0,0,0,0.25) 100%)',
+              borderRight: '1px solid rgba(0,0,0,0.3)',
+            }}
+          />
+          {/* Inner brass decorative frame */}
+          <div
+            className="absolute inset-1.5 pointer-events-none rounded-[1px]"
+            style={{
+              border: `1px solid ${theme.border}50`,
+            }}
+          />
+          {/* Header ornament */}
+          <div className="relative pl-1.5 flex items-center justify-between text-[8px] sm:text-[9px] uppercase tracking-widest font-mono" style={{ color: theme.subtitle }}>
+            <span>INKWELL</span>
+            <span>№ {book.id}</span>
+          </div>
+          {/* Title & Author */}
+          <div className="relative pl-1.5 py-1 text-center my-auto">
+            <h4
+              className="font-heading font-bold text-xs sm:text-sm leading-tight line-clamp-4"
+              style={{ color: theme.text, textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}
+            >
+              {book.title}
+            </h4>
+            <div className="w-8 h-[1px] mx-auto my-1.5" style={{ background: theme.border }} />
+            <p
+              className="font-manuscript italic text-[11px] sm:text-xs line-clamp-2"
+              style={{ color: theme.subtitle }}
+            >
+              {authorName}
+            </p>
+          </div>
+          {/* Footer badge */}
+          <div className="relative pl-1.5 text-center text-[7px] sm:text-[8px] font-manuscript uppercase tracking-wider" style={{ color: `${theme.subtitle}99` }}>
+            Public Domain Classic
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Cover Card (wider, with image for search results grid)
 // ---------------------------------------------------------------------------
 
@@ -219,9 +315,6 @@ const CoverCard: React.FC<{
   isFavorite: boolean;
   onClick: () => void;
 }> = ({ book, isFavorite, onClick }) => {
-  const [imgErr, setImgErr] = useState(false);
-  const bg = spineColor(book.id);
-
   return (
     <motion.button
       type="button"
@@ -232,51 +325,31 @@ const CoverCard: React.FC<{
       aria-label={`Open ${book.title}`}
       className="relative flex flex-col cursor-pointer rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 text-left group book-cover-tilt"
       style={{
-        width: '120px',
+        width: '130px',
         boxShadow: '2px 4px 14px rgba(0,0,0,0.22)',
       }}
     >
-      <div
-        className="rounded-t-sm overflow-hidden"
-        style={{ height: '160px', background: bg }}
-      >
-        {book.coverUrl && !imgErr ? (
-          <img
-            src={book.coverUrl}
-            alt={book.title}
-            onError={() => setImgErr(true)}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-2">
-            <BookText className="w-8 h-8 opacity-50 text-white" />
-            <span
-              className="font-heading text-[10px] text-center leading-tight font-semibold"
-              style={{ color: 'rgba(255,255,255,0.80)' }}
-            >
-              {book.title.length > 28 ? book.title.slice(0, 28) + '…' : book.title}
-            </span>
-          </div>
-        )}
+      <div className="rounded-t-sm overflow-hidden w-full aspect-[2/3]">
+        <BookCover book={book} />
       </div>
       <div
-        className="rounded-b-sm px-2 py-1.5 border border-t-0"
+        className="rounded-b-sm px-2.5 py-2 border border-t-0 w-full"
         style={{
           background: 'var(--bg-surface)',
           borderColor: 'var(--border-hairline)',
         }}
       >
         <p
-          className="font-heading text-[11px] font-semibold leading-tight line-clamp-2"
+          className="font-heading text-[12px] font-semibold leading-tight line-clamp-2"
           style={{ color: 'var(--text-primary)' }}
         >
           {book.title}
         </p>
         <p
-          className="font-manuscript text-[10px] italic mt-0.5 truncate"
+          className="font-manuscript text-[11px] italic mt-0.5 truncate"
           style={{ color: 'var(--text-muted)' }}
         >
-          {book.authors[0] ?? 'Unknown'}
+          {book.authors[0] ?? 'Unknown Author'}
         </p>
       </div>
       {isFavorite && (

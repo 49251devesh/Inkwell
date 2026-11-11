@@ -179,7 +179,9 @@ Ensure the relationships reference the exact names of other characters in the ca
       b.formats['text/plain; charset=us-ascii'] ||
       b.formats['text/plain'] ||
       '';
-    const coverUrl = b.formats['image/jpeg'] || '';
+    const coverUrl =
+      b.formats['image/jpeg'] ||
+      `https://www.gutenberg.org/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`;
     return {
       id: b.id,
       title: b.title,
@@ -202,20 +204,21 @@ Ensure the relationships reference the exact names of other characters in the ca
 
   // Category slug → topic terms mapping (all verified against Gutendex)
   const CATEGORY_TOPICS: Record<string, string[]> = {
-    'horror-gothic':       ['horror', 'gothic', 'ghost stories', 'supernatural'],
-    'science-nature':      ['science', 'natural history', 'astronomy', 'physics', 'biology'],
-    'science-fiction':     ['science fiction'],
-    'mystery-crime':       ['detective', 'mystery'],
-    'adventure':           ['adventure', 'sea stories', 'western'],
-    'romance':             ['love stories', 'romance'],
-    'fantasy-myth':        ['fantasy', 'fairy tales', 'mythology', 'legends'],
-    'history':             ['history', 'military', 'ancient'],
-    'biography-memoir':    ['biography', 'autobiography', 'diaries'],
-    'philosophy-religion': ['philosophy', 'ethics', 'religion'],
-    'travel-exploration':  ['travel', 'voyages', 'exploration'],
-    'poetry-drama':        ['poetry', 'drama', 'plays'],
-    'childrens-classics':  ['children', 'juvenile'],
-    'humor-satire':        ['humor', 'satire'],
+    'horror-gothic':          ['horror', 'gothic', 'ghost stories', 'supernatural'],
+    'science-nature':         ['science', 'natural history', 'astronomy', 'physics', 'biology'],
+    'science-fiction':        ['science fiction'],
+    'mystery-crime':          ['detective', 'mystery'],
+    'adventure':              ['adventure', 'sea stories', 'western'],
+    'romance':                ['love stories', 'romance'],
+    'fantasy-myth':           ['fantasy', 'fairy tales', 'mythology', 'legends'],
+    'history':                ['history', 'military', 'ancient'],
+    'biography-memoir':       ['biography', 'autobiography', 'diaries'],
+    'philosophy-religion':    ['philosophy', 'ethics', 'religion'],
+    'travel-exploration':     ['travel', 'voyages', 'exploration'],
+    'poetry-drama':           ['poetry', 'drama', 'plays'],
+    'childrens-classics':     ['children', 'juvenile'],
+    'humor-satire':           ['humor', 'satire'],
+    'documentary-nonfiction': ['essays', 'letters', 'speeches', 'nonfiction'],
   };
 
   // Shared caches for browse, popular, random, author endpoints
@@ -746,6 +749,36 @@ Ensure the relationships reference the exact names of other characters in the ca
       const msg = e instanceof Error ? e.message : 'Network error';
       console.error('[library/author]', msg);
       return res.status(502).json({ error: `Could not reach Gutendex: ${msg}` });
+    }
+  });
+
+  /**
+   * GET /api/library/cover/:id
+   * Optional proxy & cache for Gutenberg cover images
+   */
+  const coverCache = new Map<number, { buffer: Buffer; mime: string; ts: number }>();
+  app.get('/api/library/cover/:id', async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id ?? '', 10);
+    if (!id || id <= 0) return res.status(400).send('Invalid book id');
+    const cached = coverCache.get(id);
+    if (cached && Date.now() - cached.ts < 24 * 60 * 60 * 1000) {
+      res.setHeader('Content-Type', cached.mime);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      return res.send(cached.buffer);
+    }
+    const targetUrl = `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg`;
+    try {
+      const r = await fetchWithTimeout(targetUrl, 10000);
+      if (!r.ok) return res.status(r.status).send('Cover not found');
+      const arr = await r.arrayBuffer();
+      const buffer = Buffer.from(arr);
+      const mime = r.headers.get('content-type') || 'image/jpeg';
+      coverCache.set(id, { buffer, mime, ts: Date.now() });
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      return res.send(buffer);
+    } catch {
+      return res.status(502).send('Error fetching cover');
     }
   });
 
