@@ -585,3 +585,4 @@ export async function getAssetFromEpub(
 
   return { buffer, mimeType };
 }
+
