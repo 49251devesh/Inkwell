@@ -595,37 +595,24 @@ Ensure the relationships reference the exact names of other characters in the ca
    *   covers_only - 'true' to filter books with covers (optional)
    */
   app.get('/api/library/browse', async (req: Request, res: Response) => {
-    const category   = typeof req.query.category   === 'string' ? req.query.category.trim()   : '';
-    const page       = Math.max(1, parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10) || 1);
-    const sort       = ['popular', 'ascending', 'descending'].includes(req.query.sort as string)
+    const categoryRaw = typeof req.query.category   === 'string' ? req.query.category.trim()   : '';
+    const page        = Math.max(1, parseInt(typeof req.query.page === 'string' ? req.query.page : '1', 10) || 1);
+    const sort        = ['popular', 'ascending', 'descending'].includes(req.query.sort as string)
                         ? (req.query.sort as string) : 'popular';
-    const language   = typeof req.query.language   === 'string' ? req.query.language.trim()   : '';
-    const fromYear   = typeof req.query.from_year  === 'string' ? req.query.from_year.trim()  : '';
-    const toYear     = typeof req.query.to_year    === 'string' ? req.query.to_year.trim()    : '';
-    const coversOnly = req.query.covers_only === 'true';
+    const language    = typeof req.query.language   === 'string' ? req.query.language.trim()   : '';
+    const fromYear    = typeof req.query.from_year  === 'string' ? req.query.from_year.trim()  : '';
+    const toYear      = typeof req.query.to_year    === 'string' ? req.query.to_year.trim()    : '';
+    const coversOnly  = req.query.covers_only === 'true';
 
-    if (!category || !CATEGORY_TOPICS[category]) {
-      return res.status(400).json({
-        error: `Unknown category "${category}". Valid: ${Object.keys(CATEGORY_TOPICS).join(', ')}.`,
-      });
-    }
-
-    const cacheKey = JSON.stringify({ category, page, sort, language, fromYear, toYear, coversOnly });
+    const cacheKey = JSON.stringify({ categoryRaw, page, sort, language, fromYear, toYear, coversOnly });
     const cached = browseCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < BROWSE_TTL) {
       return res.json({ books: cached.data, total: cached.total });
     }
 
-    const topics = CATEGORY_TOPICS[category];
+    const isGeneral = !categoryRaw || categoryRaw === 'all' || categoryRaw === 'popular';
 
-    // Fetch each topic in parallel (up to 2 topics to stay fast & polite)
-    const fetchTopic = async (topic: string) => {
-      let url = `https://gutendex.com/books/?topic=${encodeURIComponent(topic)}&page=${page}`;
-      if (sort === 'ascending' || sort === 'descending') url += `&sort=${sort}`;
-      if (language)   url += `&languages=${encodeURIComponent(language)}`;
-      if (fromYear)   url += `&author_year_start=${encodeURIComponent(fromYear)}`;
-      if (toYear)     url += `&author_year_end=${encodeURIComponent(toYear)}`;
-      if (coversOnly) url += `&mime_type=image%2Fjpeg`;
+    const fetchUrl = async (url: string) => {
       try {
         const r = await fetchWithTimeout(url, 25000);
         if (!r.ok) return { results: [] as GutendexBook[], count: 0 };
@@ -636,8 +623,48 @@ Ensure the relationships reference the exact names of other characters in the ca
       }
     };
 
-    // Query up to top 2 topics for this category
-    const activeTopics = topics.slice(0, 2);
+    if (isGeneral) {
+      let url = `https://gutendex.com/books/?page=${page}`;
+      if (sort === 'ascending' || sort === 'descending') url += `&sort=${sort}`;
+      if (language)   url += `&languages=${encodeURIComponent(language)}`;
+      if (fromYear)   url += `&author_year_start=${encodeURIComponent(fromYear)}`;
+      if (toYear)     url += `&author_year_end=${encodeURIComponent(toYear)}`;
+      if (coversOnly) url += `&mime_type=image%2Fjpeg`;
+
+      const fetched = await fetchUrl(url);
+      const books = (fetched.results || []).map(mapBook);
+      browseCache.set(cacheKey, { data: books, total: fetched.count, ts: Date.now() });
+      return res.json({ books, total: fetched.count });
+    }
+
+    const categorySlugs = categoryRaw.split(',').map((s) => s.trim()).filter((s) => CATEGORY_TOPICS[s]);
+    if (categorySlugs.length === 0) {
+      return res.status(400).json({
+        error: `Unknown category "${categoryRaw}". Valid: ${Object.keys(CATEGORY_TOPICS).join(', ')}.`,
+      });
+    }
+
+    // Collect topics from selected categories (up to 2 topics across them)
+    const activeTopics: string[] = [];
+    for (const slug of categorySlugs) {
+      const top = CATEGORY_TOPICS[slug]?.[0];
+      if (top && !activeTopics.includes(top)) {
+        activeTopics.push(top);
+      }
+      if (activeTopics.length >= 2) break;
+    }
+
+    // Fetch each topic in parallel
+    const fetchTopic = async (topic: string) => {
+      let url = `https://gutendex.com/books/?topic=${encodeURIComponent(topic)}&page=${page}`;
+      if (sort === 'ascending' || sort === 'descending') url += `&sort=${sort}`;
+      if (language)   url += `&languages=${encodeURIComponent(language)}`;
+      if (fromYear)   url += `&author_year_start=${encodeURIComponent(fromYear)}`;
+      if (toYear)     url += `&author_year_end=${encodeURIComponent(toYear)}`;
+      if (coversOnly) url += `&mime_type=image%2Fjpeg`;
+      return fetchUrl(url);
+    };
+
     const fetched = await Promise.all(activeTopics.map(fetchTopic));
     const allResults: GutendexBook[] = [];
     let totalCount = 0;
