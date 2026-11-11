@@ -188,11 +188,17 @@ Ensure the relationships reference the exact names of other characters in the ca
     };
   }
 
-  async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  async function fetchWithTimeout(url: string, timeoutMs: number): Promise<globalThis.Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const r = await fetch(url, { signal: controller.signal });
+      const r = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Inkwell/1.0',
+          'Accept': 'application/json, text/plain, */*',
+        },
+      });
       clearTimeout(timer);
       return r;
     } catch (e) {
@@ -214,8 +220,8 @@ Ensure the relationships reference the exact names of other characters in the ca
     }
     try {
       const r = await fetchWithTimeout(
-        `https://gutendex.com/books?search=${encodeURIComponent(q)}`,
-        8000
+        `https://gutendex.com/books/?search=${encodeURIComponent(q)}`,
+        15000
       );
       if (!r.ok) {
         return res.status(502).json({ error: `Gutendex returned ${r.status}. Try again.` });
@@ -242,7 +248,7 @@ Ensure the relationships reference the exact names of other characters in the ca
       return res.json(cached.data);
     }
     try {
-      const r = await fetchWithTimeout(`https://gutendex.com/books/${id}`, 8000);
+      const r = await fetchWithTimeout(`https://gutendex.com/books/${id}/`, 15000);
       if (!r.ok) {
         return res.status(r.status === 404 ? 404 : 502).json({
           error: r.status === 404 ? 'Book not found in Gutenberg.' : `Gutendex returned ${r.status}.`,
@@ -274,7 +280,7 @@ Ensure the relationships reference the exact names of other characters in the ca
       if (cached && Date.now() - cached.ts < BOOK_TTL) {
         bookData = cached.data as { textUrl: string; title: string };
       } else {
-        const r = await fetchWithTimeout(`https://gutendex.com/books/${id}`, 8000);
+        const r = await fetchWithTimeout(`https://gutendex.com/books/${id}/`, 15000);
         if (!r.ok) {
           return res.status(r.status === 404 ? 404 : 502).json({ error: 'Book not found.' });
         }
@@ -336,9 +342,12 @@ Ensure the relationships reference the exact names of other characters in the ca
       const trimmed = line.trim();
       if (chapterPattern.test(trimmed) || (romanPattern.test(trimmed) && trimmed.length <= 10)) {
         if (currentLines.some((l) => l.trim())) {
-          chapters.push({ title: currentTitle, content: currentLines.join('\n').trim() });
+          chapters.push({
+            title: currentTitle || (chapters.length === 0 ? 'Front Matter' : `Section ${chapters.length}`),
+            content: currentLines.join('\n').trim(),
+          });
         }
-        currentTitle = trimmed;
+        currentTitle = trimmed.replace(/[\]\[]/g, '').trim();
         currentLines = [];
       } else {
         currentLines.push(line);
@@ -346,7 +355,10 @@ Ensure the relationships reference the exact names of other characters in the ca
     }
     // Push last segment
     if (currentLines.some((l) => l.trim())) {
-      chapters.push({ title: currentTitle, content: currentLines.join('\n').trim() });
+      chapters.push({
+        title: currentTitle || (chapters.length === 0 ? 'Full Volume' : `Section ${chapters.length + 1}`),
+        content: currentLines.join('\n').trim(),
+      });
     }
 
     // If no chapters detected, return the whole body as one chapter

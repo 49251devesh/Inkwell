@@ -422,7 +422,7 @@ const ReaderView: React.FC<{
   const [lineWidth, setLineWidth] = useState<ReaderSettings['lineWidth']>('medium');
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Load saved settings & progress
   useEffect(() => {
