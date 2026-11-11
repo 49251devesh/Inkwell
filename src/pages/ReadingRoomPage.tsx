@@ -50,6 +50,12 @@ import {
   User,
   Download,
   Clock,
+  Info,
+  Sparkles,
+  Play,
+  Check,
+  Flame,
+  ArrowRight,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -1297,8 +1303,9 @@ const CATEGORIES = [
   { slug: 'philosophy-religion', label: 'Philosophy & Religion',  icon: '⚖️' },
   { slug: 'travel-exploration',  label: 'Travel & Exploration',   icon: '🗺️' },
   { slug: 'poetry-drama',        label: 'Poetry & Drama',         icon: '🎭' },
-  { slug: 'childrens-classics',  label: "Children's Classics",    icon: '🧸' },
-  { slug: 'humor-satire',        label: 'Humor & Satire',         icon: '😄' },
+  { slug: 'childrens-classics',     label: "Children's Classics",      icon: '🧸' },
+  { slug: 'humor-satire',           label: 'Humor & Satire',           icon: '😄' },
+  { slug: 'documentary-nonfiction', label: 'Documentary & Nonfiction', icon: '📰' },
 ] as const;
 
 type CategorySlug = typeof CATEGORIES[number]['slug'];
@@ -1372,40 +1379,229 @@ function authorEraLabel(authorYears?: { birthYear: number | null; deathYear: num
 }
 
 // ---------------------------------------------------------------------------
-// BookShelfRow — horizontal scrollable shelf
+// Netflix-Style Book Card
 // ---------------------------------------------------------------------------
 
-const BookShelfRow: React.FC<{
+export const NetflixBookCard: React.FC<{
+  book: LibraryBook;
+  isFavorite: boolean;
+  onRead: (book: LibraryBook) => void;
+  onToggleFavorite: (book: LibraryBook) => void;
+  onOpenDetail: (book: LibraryBook) => void;
+  rank?: number;
+  progressPercent?: number;
+}> = ({
+  book,
+  isFavorite,
+  onRead,
+  onToggleFavorite,
+  onOpenDetail,
+  rank,
+  progressPercent,
+}) => {
+  const readingTime = estimateReadingTime(book.downloadCount);
+  const authorName = (book.authors && book.authors[0]) || 'Unknown Author';
+  const subjects = (book.subjects || []).slice(0, 2);
+
+  return (
+    <div
+      className="relative flex-shrink-0 group select-none snap-start"
+      style={{ width: '160px' }}
+    >
+      <motion.div
+        whileHover={{ y: -8, scale: 1.05 }}
+        transition={{ type: 'spring', stiffness: 350, damping: 22 }}
+        className="relative flex flex-col rounded-sm overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-surface)] shadow-md transition-shadow hover:shadow-2xl"
+      >
+        {/* Top 10 Rank Numeral (Netflix style) */}
+        {rank !== undefined && (
+          <div
+            className="absolute -left-2 bottom-1 pointer-events-none z-10 font-display font-black text-6xl sm:text-7xl leading-none select-none"
+            style={{
+              WebkitTextStroke: '2px var(--accent-brass)',
+              color: 'var(--bg-canvas)',
+              filter: 'drop-shadow(2px 3px 5px rgba(0,0,0,0.5))',
+              opacity: 0.92,
+            }}
+          >
+            {rank}
+          </div>
+        )}
+
+        {/* 2:3 Cover container with click to open detail on mobile */}
+        <div
+          className="relative w-full aspect-[2/3] cursor-pointer"
+          onClick={() => onOpenDetail(book)}
+        >
+          <BookCover book={book} />
+
+          {/* Reading progress bar across bottom of cover */}
+          {progressPercent !== undefined && (
+            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60 z-20">
+              <div
+                className="h-full bg-[var(--accent-primary)] transition-all"
+                style={{ width: `${Math.min(100, Math.max(5, progressPercent))}%` }}
+              />
+            </div>
+          )}
+
+          {/* Desktop Hover Quick Action Overlay (Netflix style) */}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-2.5 flex flex-col justify-between z-20 pointer-events-none group-hover:pointer-events-auto">
+            {/* Quick action buttons */}
+            <div className="flex items-center justify-between gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRead(book);
+                }}
+                className="w-8 h-8 rounded-full bg-[var(--accent-primary)] text-white flex items-center justify-center shadow hover:opacity-95 cursor-pointer transition-transform hover:scale-110"
+                title="Read volume"
+                aria-label={`Read ${book.title}`}
+              >
+                <BookOpen className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(book);
+                  }}
+                  className="w-8 h-8 rounded-full bg-[var(--bg-canvas)] border border-[var(--border-brass)] text-[var(--text-primary)] flex items-center justify-center shadow hover:bg-[var(--burgundy-wash)] cursor-pointer transition-transform hover:scale-110"
+                  title={isFavorite ? 'Unfavorite' : 'Add to Favorites'}
+                  aria-label={isFavorite ? `Unfavorite ${book.title}` : `Favorite ${book.title}`}
+                >
+                  <Heart
+                    className={`w-3.5 h-3.5 ${
+                      isFavorite ? 'fill-[var(--accent-primary)] text-[var(--accent-primary)]' : ''
+                    }`}
+                  />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDetail(book);
+                  }}
+                  className="w-8 h-8 rounded-full bg-[var(--bg-canvas)] border border-[var(--border-brass)] text-[var(--text-primary)] flex items-center justify-center shadow hover:bg-[var(--burgundy-wash)] cursor-pointer transition-transform hover:scale-110"
+                  title="Volume details"
+                  aria-label={`Details for ${book.title}`}
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Quick stats & tags */}
+            <div className="space-y-1">
+              {book.downloadCount !== undefined && book.downloadCount > 0 && (
+                <div className="flex items-center gap-1 text-[10px] text-white/80 font-mono">
+                  <Download className="w-2.5 h-2.5 text-[var(--accent-brass)]" />
+                  <span>{book.downloadCount.toLocaleString()}</span>
+                </div>
+              )}
+              {readingTime && (
+                <div className="flex items-center gap-1 text-[10px] text-white/80 font-mono">
+                  <Clock className="w-2.5 h-2.5 text-[var(--accent-brass)]" />
+                  <span>{readingTime}</span>
+                </div>
+              )}
+              {subjects.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {subjects.map((s) => (
+                    <span
+                      key={s}
+                      className="text-[9px] px-1.5 py-0.5 rounded bg-black/50 border border-white/10 text-white/90 truncate max-w-[130px]"
+                    >
+                      {s.split('--')[0].trim()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Title & Author below cover */}
+        <div
+          className="p-2.5 cursor-pointer text-left"
+          onClick={() => onOpenDetail(book)}
+        >
+          <h4
+            className="font-heading font-semibold text-[13px] leading-snug line-clamp-2"
+            style={{ color: 'var(--text-primary)' }}
+            title={book.title}
+          >
+            {book.title}
+          </h4>
+          <p
+            className="font-manuscript italic text-[11px] truncate mt-1"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {authorName}
+          </p>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Netflix-Style Horizontal Row
+// ---------------------------------------------------------------------------
+
+export const NetflixRow: React.FC<{
   title: string;
   icon?: React.ReactNode;
   books: LibraryBook[];
-  loading: boolean;
+  loading?: boolean;
   error?: string | null;
+  onSeeAll?: () => void;
+  onRead: (book: LibraryBook) => void;
+  onToggleFavorite: (book: LibraryBook) => void;
+  onOpenDetail: (book: LibraryBook) => void;
   favoriteIds: Set<number>;
-  onBookClick: (book: LibraryBook) => void;
+  isTop10?: boolean;
+  progressMap?: Map<number, number>;
   onRetry?: () => void;
-}> = ({ title, icon, books, loading, error, favoriteIds, onBookClick, onRetry }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
+}> = ({
+  title,
+  icon,
+  books,
+  loading = false,
+  error = null,
+  onSeeAll,
+  onRead,
+  onToggleFavorite,
+  onOpenDetail,
+  favoriteIds,
+  isTop10 = false,
+  progressMap,
+  onRetry,
+}) => {
+  const rowRef = useRef<HTMLDivElement>(null);
 
-  const scrollBy = (dir: -1 | 1) => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollBy({ left: dir * 320, behavior: 'smooth' });
+  const scroll = (direction: -1 | 1) => {
+    if (!rowRef.current) return;
+    const clientWidth = rowRef.current.clientWidth;
+    rowRef.current.scrollBy({ left: direction * (clientWidth * 0.75), behavior: 'smooth' });
   };
 
   if (error) {
     return (
-      <section className="mb-8" aria-labelledby={`shelf-${title}`}>
+      <section className="mb-8" aria-label={title}>
         <div className="flex items-center gap-2 mb-3">
           {icon}
-          <h2 id={`shelf-${title}`} className="font-heading text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <h3 className="font-heading text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
             {title}
-          </h2>
+          </h3>
         </div>
-        <div className="flex items-center gap-3 px-4 py-3 border rounded-sm" style={{ borderColor: 'var(--border-hairline)', background: 'var(--bg-surface)', color: 'var(--text-muted)' }}>
-          <AlertCircle className="w-4 h-4 shrink-0 text-[var(--accent-primary)]" />
-          <span className="font-manuscript text-sm">{error}</span>
+        <div className="flex items-center gap-3 px-4 py-3 border rounded-sm" style={{ borderColor: 'var(--border-hairline)', background: 'var(--bg-surface)' }}>
+          <AlertCircle className="w-4 h-4 text-[var(--accent-primary)] shrink-0" />
+          <span className="font-manuscript text-sm text-[var(--text-muted)]">{error}</span>
           {onRetry && (
-            <button type="button" onClick={onRetry} className="ml-auto font-manuscript text-xs underline cursor-pointer hover:text-[var(--text-primary)] transition-colors" style={{ color: 'var(--accent-brass)' }}>
+            <button type="button" onClick={onRetry} className="ml-auto font-manuscript text-xs underline cursor-pointer text-[var(--accent-brass)]">
               Retry
             </button>
           )}
@@ -1414,88 +1610,291 @@ const BookShelfRow: React.FC<{
     );
   }
 
+  if (!loading && books.length === 0) return null;
+
   return (
-    <section className="mb-8" aria-labelledby={`shelf-${title}`}>
-      <div className="flex items-center gap-2 mb-3">
-        {icon}
-        <h2 id={`shelf-${title}`} className="font-heading text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-          {title}
-        </h2>
-        <div className="ml-auto flex gap-1">
+    <section className="mb-9 relative group/row" aria-label={title}>
+      {/* Row Header */}
+      <div className="flex items-baseline justify-between mb-3 px-1">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h3 className="font-heading text-lg sm:text-xl font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            {title}
+          </h3>
+          {books.length > 0 && !loading && (
+            <span className="font-mono text-xs text-[var(--text-muted)]">
+              ({books.length})
+            </span>
+          )}
+        </div>
+        {onSeeAll && (
           <button
             type="button"
-            aria-label={`Scroll ${title} left`}
-            onClick={() => scrollBy(-1)}
-            className="p-1.5 rounded-sm border cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)]"
-            style={{ borderColor: 'var(--border-hairline)', color: 'var(--text-muted)' }}
+            onClick={onSeeAll}
+            className="flex items-center gap-1 font-manuscript text-xs sm:text-sm text-[var(--accent-brass)] hover:underline cursor-pointer transition-colors"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <span>See all</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            aria-label={`Scroll ${title} right`}
-            onClick={() => scrollBy(1)}
-            className="p-1.5 rounded-sm border cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)]"
-            style={{ borderColor: 'var(--border-hairline)', color: 'var(--text-muted)' }}
+        )}
+      </div>
+
+      {/* Row Scroll Container with Nav Arrows */}
+      <div className="relative">
+        {/* Left Arrow Button */}
+        <button
+          type="button"
+          onClick={() => scroll(-1)}
+          aria-label={`Scroll ${title} left`}
+          className="absolute -left-3 sm:-left-4 top-1/2 -translate-y-1/2 z-30 w-8 sm:w-10 h-16 sm:h-20 bg-black/60 hover:bg-black/80 text-white rounded-r-sm flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity backdrop-blur-sm cursor-pointer shadow-xl"
+        >
+          <ChevronLeft className="w-5 sm:w-6 h-5 sm:h-6" />
+        </button>
+
+        {/* Horizontal Book Strip */}
+        <div
+          ref={rowRef}
+          className="flex gap-4 overflow-x-auto scroll-smooth py-2 px-1 shelf-row-scroll"
+          style={{ scrollSnapType: 'x mandatory' }}
+          role="list"
+        >
+          {loading ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex-shrink-0 rounded-sm animate-pulse bg-[var(--bg-surface)] border border-[var(--border-hairline)]"
+                style={{ width: '160px', height: '280px' }}
+              />
+            ))
+          ) : (
+            books.map((book, idx) => (
+              <div key={book.id} role="listitem">
+                <NetflixBookCard
+                  book={book}
+                  isFavorite={favoriteIds.has(book.id)}
+                  onRead={onRead}
+                  onToggleFavorite={onToggleFavorite}
+                  onOpenDetail={onOpenDetail}
+                  rank={isTop10 ? idx + 1 : undefined}
+                  progressPercent={progressMap?.get(book.id)}
+                />
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Right Arrow Button */}
+        <button
+          type="button"
+          onClick={() => scroll(1)}
+          aria-label={`Scroll ${title} right`}
+          className="absolute -right-3 sm:-right-4 top-1/2 -translate-y-1/2 z-30 w-8 sm:w-10 h-16 sm:h-20 bg-black/60 hover:bg-black/80 text-white rounded-l-sm flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity backdrop-blur-sm cursor-pointer shadow-xl"
+        >
+          <ChevronRight className="w-5 sm:w-6 h-5 sm:h-6" />
+        </button>
+      </div>
+    </section>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Netflix-Style Hero Banner Component
+// ---------------------------------------------------------------------------
+
+export const HeroBanner: React.FC<{
+  books: LibraryBook[];
+  onRead: (book: LibraryBook) => void;
+  onToggleFavorite: (book: LibraryBook) => void;
+  onOpenDetail: (book: LibraryBook) => void;
+  favoriteIds: Set<number>;
+}> = ({ books, onRead, onToggleFavorite, onOpenDetail, favoriteIds }) => {
+  const featured = useMemo(() => books.slice(0, 5), [books]);
+  const [index, setIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+
+  useEffect(() => {
+    // Check prefers-reduced-motion
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    if (isHovered || featured.length <= 1) return;
+    const t = setInterval(() => {
+      setIndex((prev) => (prev + 1) % featured.length);
+    }, 8000);
+    return () => clearInterval(t);
+  }, [isHovered, featured.length]);
+
+  if (featured.length === 0) return null;
+  const current = featured[index] || featured[0];
+  const isFav = favoriteIds.has(current.id);
+  const authorName = (current.authors && current.authors[0]) || 'Unknown Author';
+
+  return (
+    <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="relative w-full rounded-md overflow-hidden mb-8 border border-[var(--border-brass)] shadow-2xl"
+      style={{
+        background: 'var(--bg-surface)',
+        minHeight: '340px',
+      }}
+    >
+      {/* Blurred cover backdrop */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none select-none">
+        {current.coverUrl && (
+          <img
+            src={current.coverUrl}
+            alt=""
+            className="w-full h-full object-cover filter blur-3xl scale-150 opacity-25 dark:opacity-15"
+          />
+        )}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(90deg, var(--bg-surface) 0%, color-mix(in srgb, var(--bg-surface) 92%, transparent) 55%, transparent 100%)',
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(to top, var(--bg-surface) 0%, transparent 60%)',
+          }}
+        />
+      </div>
+
+      {/* Hero Content */}
+      <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 p-6 sm:p-10">
+        <div className="flex-1 max-w-xl text-left">
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-widest border border-[var(--border-brass)] text-[var(--accent-brass)]"
+              style={{ background: 'var(--bg-canvas)' }}
+            >
+              <Sparkles className="w-3 h-3 text-[var(--accent-brass)]" /> Featured Classic
+            </span>
+            {current.downloadCount !== undefined && current.downloadCount > 0 && (
+              <span className="text-xs font-mono text-[var(--text-muted)]">
+                {current.downloadCount.toLocaleString()} readers
+              </span>
+            )}
+          </div>
+
+          <h2
+            className="font-display font-bold text-2xl sm:text-4xl lg:text-5xl leading-tight tracking-tight mb-2"
+            style={{ color: 'var(--text-primary)' }}
           >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+            {current.title}
+          </h2>
+
+          <p
+            className="font-manuscript italic text-base sm:text-lg mb-3"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            by {authorName}
+            {current.authorYears && current.authorYears[0] && (
+              <span className="ml-2 not-italic text-xs font-mono text-[var(--text-muted)]">
+                {authorEraLabel(current.authorYears)}
+              </span>
+            )}
+          </p>
+
+          {current.summary && (
+            <p
+              className="font-manuscript text-xs sm:text-sm line-clamp-3 leading-relaxed mb-4"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {current.summary}
+            </p>
+          )}
+
+          {current.subjects && current.subjects.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-5">
+              {current.subjects.slice(0, 4).map((s) => (
+                <span
+                  key={s}
+                  className="font-manuscript text-[11px] px-2.5 py-0.5 rounded-full border border-[var(--border-hairline)] bg-[var(--bg-canvas)] text-[var(--text-muted)]"
+                >
+                  {s.split('--')[0].trim()}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onRead(current)}
+              className="flex items-center gap-2 px-5 py-2.5 font-manuscript text-sm font-semibold rounded-sm cursor-pointer shadow-md transition-all hover:scale-105 active:scale-95"
+              style={{
+                background: 'var(--accent-primary)',
+                color: '#F4EFE5',
+              }}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Start Reading</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onToggleFavorite(current)}
+              className="flex items-center gap-2 px-4 py-2.5 font-manuscript text-sm rounded-sm border border-[var(--border-brass)] cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)]"
+              style={{
+                background: 'var(--bg-canvas)',
+                color: isFav ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              }}
+            >
+              <Heart className={`w-4 h-4 ${isFav ? 'fill-current' : ''}`} />
+              <span>{isFav ? 'In Favourites' : 'Add to Favourites'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onOpenDetail(current)}
+              className="flex items-center gap-1.5 px-3 py-2.5 font-manuscript text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+            >
+              <Info className="w-4 h-4" />
+              <span>Details</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Hero Cover Card on Right */}
+        <div className="w-40 sm:w-52 flex-shrink-0 drop-shadow-2xl">
+          <motion.div
+            key={current.id}
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="cursor-pointer"
+            onClick={() => onOpenDetail(current)}
+          >
+            <BookCover book={current} className="shadow-2xl border border-[var(--border-brass)] rounded-sm" />
+          </motion.div>
         </div>
       </div>
 
-      <div
-        className="relative rounded-sm pb-5 pt-4 px-4"
-        style={{
-          background: 'color-mix(in srgb, var(--bg-surface) 70%, transparent)',
-          borderBottom: '4px solid var(--border-brass)',
-          boxShadow: 'inset 0 -4px 12px rgba(0,0,0,0.12)',
-        }}
-      >
-        <div
-          ref={scrollRef}
-          className="flex gap-3 items-end overflow-x-auto shelf-row-scroll"
-          role="list"
-          aria-label={`${title} books`}
-          style={{ scrollbarWidth: 'none' }}
-        >
-          {loading
-            ? Array.from({ length: 8 }).map((_, i) => (
-                <div
-                  key={i}
-                  role="presentation"
-                  className="flex-shrink-0 w-14 sm:w-16 rounded-sm animate-pulse"
-                  style={{
-                    height: '180px',
-                    background: 'var(--bg-canvas)',
-                    opacity: 0.5 + (i * 0.06),
-                  }}
-                />
-              ))
-            : books.length === 0
-            ? (
-                <div className="flex-1 py-10 text-center font-manuscript text-sm italic" style={{ color: 'var(--text-muted)' }}>
-                  No volumes on this shelf. Try another subject.
-                </div>
-              )
-            : books.map((book, i) => (
-                <motion.div
-                  key={book.id}
-                  role="listitem"
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(i * 0.04, 0.4), duration: 0.25 }}
-                >
-                  <SpineCard
-                    book={book}
-                    isFavorite={favoriteIds.has(book.id)}
-                    onClick={() => onBookClick(book)}
-                  />
-                </motion.div>
-              ))
-          }
+      {/* Hero Dots Navigation */}
+      {featured.length > 1 && (
+        <div className="absolute bottom-3 right-5 z-20 flex items-center gap-1.5 bg-black/30 backdrop-blur-sm px-2.5 py-1 rounded-full">
+          {featured.map((b, idx) => (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => setIndex(idx)}
+              aria-label={`Jump to featured slide ${idx + 1}: ${b.title}`}
+              className={`w-2 h-2 rounded-full transition-all cursor-pointer ${
+                idx === index
+                  ? 'w-5 bg-[var(--accent-primary)]'
+                  : 'bg-white/40 hover:bg-white/70'
+              }`}
+            />
+          ))}
         </div>
-      </div>
-    </section>
+      )}
+    </div>
   );
 };
 
@@ -2067,6 +2466,7 @@ export const ReadingRoomPage: React.FC = () => {
   const [selectedBook, setSelectedBook] = useState<LibraryBook | null>(null);
   const [readerBook, setReaderBook] = useState<LibraryBook | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Category & filter state from URL
   const selectedCategory = (searchParams.get('category') as CategorySlug | null) || null;
@@ -2120,12 +2520,16 @@ export const ReadingRoomPage: React.FC = () => {
 
   const [surpriseLoading, setSurpriseLoading] = useState(false);
 
-  // Previews for 4 core categories
-  const [previewHorror, setPreviewHorror] = useState<LibraryBook[]>([]);
-  const [previewSciFi, setPreviewSciFi] = useState<LibraryBook[]>([]);
-  const [previewMystery, setPreviewMystery] = useState<LibraryBook[]>([]);
-  const [previewAdventure, setPreviewAdventure] = useState<LibraryBook[]>([]);
-  const [previewsLoading, setPreviewsLoading] = useState(true);
+  // Category shelves state
+  const [horrorBooks, setHorrorBooks] = useState<LibraryBook[]>([]);
+  const [scienceBooks, setScienceBooks] = useState<LibraryBook[]>([]);
+  const [mysteryBooks, setMysteryBooks] = useState<LibraryBook[]>([]);
+  const [adventureBooks, setAdventureBooks] = useState<LibraryBook[]>([]);
+  const [romanceBooks, setRomanceBooks] = useState<LibraryBook[]>([]);
+  const [fantasyBooks, setFantasyBooks] = useState<LibraryBook[]>([]);
+  const [historyBooks, setHistoryBooks] = useState<LibraryBook[]>([]);
+  const [nonfictionBooks, setNonfictionBooks] = useState<LibraryBook[]>([]);
+  const [categoryShelvesLoading, setCategoryShelvesLoading] = useState(true);
 
   // Live favorites from Dexie
   const favorites = useLiveQuery(
@@ -2144,6 +2548,15 @@ export const ReadingRoomPage: React.FC = () => {
     [],
     []
   );
+
+  const progressMap = useMemo(() => {
+    const map = new Map<number, number>();
+    (progressList || []).forEach((p) => {
+      const percent = Math.min(100, Math.max(10, Math.round((p.chapterIndex + 1) * 12)));
+      map.set(p.bookId, percent);
+    });
+    return map;
+  }, [progressList]);
 
   // Load Continue Reading books
   useEffect(() => {
@@ -2169,18 +2582,37 @@ export const ReadingRoomPage: React.FC = () => {
     });
   }, [progressList]);
 
-  // Fetch Popular Classics
-  const fetchPopular = useCallback(() => {
+  // Fetch Popular Classics with IndexedDB cache
+  const fetchPopular = useCallback(async () => {
     setPopularLoading(true);
     setPopularError(null);
+    const cacheId = 'popular-classics-p1';
+    try {
+      const cached = await readingRoomDb.cachedCategoryResults.get(cacheId);
+      if (cached && Date.now() - cached.updatedAt < CATEGORY_TTL_MS) {
+        setPopularBooks(cached.data as LibraryBook[]);
+        setPopularLoading(false);
+        return;
+      }
+    } catch { /* ignore */ }
+
     fetch('/api/library/popular?page=1')
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<{ books: LibraryBook[] }>;
       })
-      .then((data) => {
-        setPopularBooks(data.books || []);
+      .then(async (data) => {
+        const b = data.books || [];
+        setPopularBooks(b);
         setPopularLoading(false);
+        try {
+          await readingRoomDb.cachedCategoryResults.put({
+            id: cacheId,
+            data: b,
+            total: b.length,
+            updatedAt: Date.now(),
+          });
+        } catch { /* ignore */ }
       })
       .catch((e: Error) => {
         setPopularError(e.message);
@@ -2192,20 +2624,28 @@ export const ReadingRoomPage: React.FC = () => {
     fetchPopular();
   }, [fetchPopular]);
 
-  // Fetch Category Previews
+  // Fetch Category Shelves
   useEffect(() => {
-    setPreviewsLoading(true);
+    setCategoryShelvesLoading(true);
     Promise.all([
       getCategoryBooks('horror-gothic', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
-      getCategoryBooks('science-fiction', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
+      getCategoryBooks('science-nature', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
       getCategoryBooks('mystery-crime', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
       getCategoryBooks('adventure', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
-    ]).then(([horror, scifi, mystery, adventure]) => {
-      setPreviewHorror(horror.books);
-      setPreviewSciFi(scifi.books);
-      setPreviewMystery(mystery.books);
-      setPreviewAdventure(adventure.books);
-      setPreviewsLoading(false);
+      getCategoryBooks('romance', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
+      getCategoryBooks('fantasy-myth', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
+      getCategoryBooks('history', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
+      getCategoryBooks('documentary-nonfiction', 1, 'popular', '', '', '', true).catch(() => ({ books: [] })),
+    ]).then(([horror, science, mystery, adventure, romance, fantasy, history, nonfiction]) => {
+      setHorrorBooks(horror.books);
+      setScienceBooks(science.books);
+      setMysteryBooks(mystery.books);
+      setAdventureBooks(adventure.books);
+      setRomanceBooks(romance.books);
+      setFantasyBooks(fantasy.books);
+      setHistoryBooks(history.books);
+      setNonfictionBooks(nonfiction.books);
+      setCategoryShelvesLoading(false);
     });
   }, []);
 
@@ -2216,7 +2656,6 @@ export const ReadingRoomPage: React.FC = () => {
       setRecommendedSubject('');
       return;
     }
-    // Find top subject among favorites
     const subjectCounts = new Map<string, number>();
     for (const fav of favorites) {
       for (const subj of fav.subjects || []) {
@@ -2272,6 +2711,30 @@ export const ReadingRoomPage: React.FC = () => {
         setSearching(false);
       });
   }, [debouncedQuery]);
+
+  // Live search suggestions pool
+  const suggestions = useMemo(() => {
+    if (!query.trim() || query.trim().length < 2) return [];
+    const q = query.toLowerCase().trim();
+    const pool = [
+      ...popularBooks,
+      ...horrorBooks,
+      ...adventureBooks,
+      ...scienceBooks,
+      ...(favorites || []),
+    ];
+    const seen = new Set<number>();
+    const matches: LibraryBook[] = [];
+    for (const b of pool) {
+      if (seen.has(b.id)) continue;
+      if (b.title.toLowerCase().includes(q) || b.authors.some((a) => a.toLowerCase().includes(q))) {
+        seen.add(b.id);
+        matches.push(b);
+        if (matches.length >= 5) break;
+      }
+    }
+    return matches;
+  }, [query, popularBooks, horrorBooks, adventureBooks, scienceBooks, favorites]);
 
   const toggleFavorite = useCallback(
     async (book: LibraryBook) => {
@@ -2412,89 +2875,36 @@ export const ReadingRoomPage: React.FC = () => {
         onApply={handleApplyFilters}
       />
 
-      {/* Main Browse Container */}
-      <div
-        className="max-w-[1260px] mx-auto px-4 sm:px-8 lg:px-12 py-8 sm:py-10"
-        style={{ color: 'var(--text-primary)' }}
-      >
-        {/* Editorial Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="flex items-start gap-3">
+      {/* Sticky Top Bar (Netflix/Amazon style) */}
+      <div className="sticky top-0 z-40 bg-[var(--bg-canvas)]/95 backdrop-blur-md border-b border-[var(--border-hairline)] shadow-sm px-4 sm:px-8 lg:px-12 py-3 transition-all">
+        <div className="max-w-[1260px] mx-auto flex items-center justify-between gap-3 sm:gap-6">
+          {/* Logo & Folio Title */}
+          <div
+            className="flex items-center gap-2.5 cursor-pointer shrink-0 select-none"
+            onClick={() => {
+              handleCategoryChange(null);
+              setQuery('');
+            }}
+          >
             <BookMarked
-              className="w-7 h-7 mt-0.5 flex-shrink-0"
+              className="w-6 h-6"
               style={{ color: 'var(--accent-brass)' }}
-              strokeWidth={1.4}
+              strokeWidth={1.5}
             />
-            <div>
-              <h1 className="font-heading text-2xl sm:text-4xl font-semibold tracking-tight" style={{ color: 'var(--text-primary)' }}>
-                The Reading Room
-              </h1>
-              <p className="font-manuscript italic text-sm sm:text-base mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                Illustrated volumes & complete public-domain archives
-              </p>
-            </div>
+            <span className="font-heading font-semibold text-lg sm:text-xl tracking-tight hidden sm:inline" style={{ color: 'var(--text-primary)' }}>
+              The Reading Room
+            </span>
           </div>
 
-          {/* Action buttons: Surprise Me & Filters */}
-          <div className="flex items-center gap-2.5 self-start sm:self-auto">
-            <button
-              type="button"
-              onClick={handleSurpriseMe}
-              disabled={surpriseLoading}
-              aria-label="Surprise me with a random book"
-              className="flex items-center gap-2 px-3.5 py-2 font-manuscript text-xs sm:text-sm border rounded-sm cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)] shadow-sm disabled:opacity-50"
-              style={{
-                borderColor: 'var(--border-brass)',
-                background: 'var(--bg-surface)',
-                color: 'var(--accent-brass)',
-              }}
-            >
-              {surpriseLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-[var(--accent-brass)]" />
-              ) : (
-                <Shuffle className="w-4 h-4 text-[var(--accent-brass)]" />
-              )}
-              <span>Surprise Me</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterOpen(true)}
-              aria-label="Open filter drawer"
-              className="relative flex items-center gap-2 px-3.5 py-2 font-manuscript text-xs sm:text-sm border rounded-sm cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)] shadow-sm"
-              style={{
-                borderColor: activeFilterCount > 0 ? 'var(--accent-primary)' : 'var(--border-hairline)',
-                background: activeFilterCount > 0 ? 'var(--burgundy-wash)' : 'var(--bg-surface)',
-                color: activeFilterCount > 0 ? 'var(--accent-primary)' : 'var(--text-secondary)',
-              }}
-            >
-              <SlidersHorizontal className="w-4 h-4" />
-              <span>Filters</span>
-              {activeFilterCount > 0 && (
-                <span
-                  className="w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-white"
-                  style={{ background: 'var(--accent-primary)' }}
-                >
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Card Catalogue Search Bar */}
-        <div className="relative mb-5">
-          <label htmlFor="reading-room-search" className="sr-only">
-            Search public-domain books
-          </label>
-          <div className="relative">
+          {/* Live Search Input with Suggestions Dropdown */}
+          <div className="relative flex-1 max-w-xl">
             <Search
-              className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
               style={{ color: 'var(--text-muted)' }}
             />
             {searching ? (
               <Loader2
-                className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin"
                 style={{ color: 'var(--accent-brass)' }}
               />
             ) : query ? (
@@ -2502,11 +2912,12 @@ export const ReadingRoomPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setQuery('');
+                  setShowSuggestions(false);
                   const next = new URLSearchParams(searchParams);
                   next.delete('q');
                   setSearchParams(next);
                 }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer hover:bg-[var(--burgundy-wash)]"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 rounded cursor-pointer hover:bg-[var(--burgundy-wash)]"
                 style={{ color: 'var(--text-muted)' }}
                 aria-label="Clear search"
               >
@@ -2518,9 +2929,18 @@ export const ReadingRoomPage: React.FC = () => {
               ref={searchInputRef}
               type="search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, or subject — e.g. Frankenstein, Austen, Gothic, Astronomy…"
-              className="w-full pl-10 pr-10 py-3 font-manuscript text-sm border rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] shadow-sm"
+              onFocus={() => setShowSuggestions(true)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  setShowSuggestions(false);
+                }
+              }}
+              placeholder="Search classics, authors, topics — e.g. Austen, Shelley, Gothic…"
+              className="w-full pl-9 sm:pl-10 pr-9 sm:pr-10 py-2 sm:py-2.5 font-manuscript text-xs sm:text-sm border rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] shadow-inner transition-all"
               style={{
                 background: 'var(--bg-surface)',
                 borderColor: 'var(--border-brass)',
@@ -2528,26 +2948,98 @@ export const ReadingRoomPage: React.FC = () => {
               }}
               autoComplete="off"
               spellCheck={false}
-              aria-describedby="reading-room-hint"
             />
-          </div>
-          <div className="flex items-center justify-between mt-1.5 px-0.5">
-            <p id="reading-room-hint" className="font-manuscript text-xs" style={{ color: 'var(--text-muted)' }}>
-              Public-domain editions only · Complete texts and original illustrations.
-            </p>
-            {activeFilterCount > 0 && (
-              <button
-                type="button"
-                onClick={() => handleApplyFilters({ language: '', fromYear: '', toYear: '', sort: 'popular', coversOnly: false })}
-                className="font-manuscript text-xs underline cursor-pointer hover:text-[var(--text-primary)] transition-colors"
-                style={{ color: 'var(--accent-brass)' }}
+
+            {/* Suggestions Dropdown */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div
+                className="absolute left-0 right-0 top-full mt-2 rounded-md shadow-2xl border border-[var(--border-brass)] bg-[var(--bg-surface)] overflow-hidden z-50 divide-y divide-[var(--border-hairline)]"
               >
-                Clear all filters
-              </button>
+                {suggestions.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => {
+                      setShowSuggestions(false);
+                      setSelectedBook(s);
+                    }}
+                    className="flex items-center gap-3 p-2.5 hover:bg-[var(--burgundy-wash)] cursor-pointer transition-colors"
+                  >
+                    <div className="w-8 aspect-[2/3] shrink-0 rounded-[1px] overflow-hidden">
+                      <BookCover book={s} />
+                    </div>
+                    <div className="flex-1 min-w-0 text-left">
+                      <p className="font-heading font-semibold text-xs truncate" style={{ color: 'var(--text-primary)' }}>
+                        {s.title}
+                      </p>
+                      <p className="font-manuscript text-[11px] italic truncate" style={{ color: 'var(--text-muted)' }}>
+                        {s.authors[0] ?? 'Unknown Author'}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--accent-brass)] shrink-0" />
+                  </div>
+                ))}
+                <div
+                  onClick={() => setShowSuggestions(false)}
+                  className="p-2 text-center text-xs font-manuscript italic text-[var(--accent-brass)] hover:underline cursor-pointer bg-[var(--bg-canvas)]"
+                >
+                  Press Enter to view all results for "{query}"
+                </div>
+              </div>
             )}
           </div>
-        </div>
 
+          {/* Action buttons: Surprise Me & Filters */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleSurpriseMe}
+              disabled={surpriseLoading}
+              title="Random classic volume"
+              className="flex items-center gap-1.5 px-3 py-2 font-manuscript text-xs sm:text-sm border rounded-full cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)] shadow-sm"
+              style={{
+                borderColor: 'var(--border-brass)',
+                background: 'var(--bg-surface)',
+                color: 'var(--accent-brass)',
+              }}
+            >
+              {surpriseLoading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Shuffle className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden md:inline">Surprise Me</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFilterOpen(true)}
+              className="relative flex items-center gap-1.5 px-3 py-2 font-manuscript text-xs sm:text-sm border rounded-full cursor-pointer transition-colors hover:bg-[var(--burgundy-wash)] shadow-sm"
+              style={{
+                borderColor: activeFilterCount > 0 ? 'var(--accent-primary)' : 'var(--border-hairline)',
+                background: activeFilterCount > 0 ? 'var(--burgundy-wash)' : 'var(--bg-surface)',
+                color: activeFilterCount > 0 ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              }}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span
+                  className="w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center text-white"
+                  style={{ background: 'var(--accent-primary)' }}
+                >
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Browse Container */}
+      <div
+        className="max-w-[1260px] mx-auto px-4 sm:px-8 lg:px-12 py-6 sm:py-8"
+        style={{ color: 'var(--text-primary)' }}
+      >
         {/* Active Filter Pills (if any) */}
         {activeFilterCount > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 mb-5">
@@ -2576,11 +3068,16 @@ export const ReadingRoomPage: React.FC = () => {
                 <button type="button" onClick={() => removeFilter('coversOnly')} className="hover:opacity-75 cursor-pointer"><X className="w-3 h-3" /></button>
               </span>
             )}
+            <button
+              type="button"
+              onClick={() => handleApplyFilters({ language: '', fromYear: '', toYear: '', sort: 'popular', coversOnly: false })}
+              className="font-manuscript text-xs underline cursor-pointer hover:text-[var(--text-primary)] transition-colors ml-2"
+              style={{ color: 'var(--accent-brass)' }}
+            >
+              Clear all
+            </button>
           </div>
         )}
-
-        {/* Category Chips Bar */}
-        <CategoryChips selected={selectedCategory} onChange={handleCategoryChange} />
 
         {/* Search Error */}
         {searchError && (
@@ -2614,7 +3111,7 @@ export const ReadingRoomPage: React.FC = () => {
             {searching ? (
               <div className="flex flex-wrap gap-4">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="w-[120px] h-[200px] rounded-sm animate-pulse" style={{ background: 'var(--bg-surface)' }} />
+                  <div key={i} className="w-[130px] aspect-[2/3] rounded-sm animate-pulse" style={{ background: 'var(--bg-surface)' }} />
                 ))}
               </div>
             ) : results.length > 0 ? (
@@ -2650,103 +3147,206 @@ export const ReadingRoomPage: React.FC = () => {
             onBookClick={(book) => setSelectedBook(book)}
           />
         ) : (
-          /* View C: Full Library Browse Shelves */
-          <div className="space-y-4">
-            {/* 1. Continue Reading Shelf */}
+          /* View C: Netflix-Style Full Library Browse */
+          <div>
+            {/* 1. Hero Banner (Netflix style) */}
+            <HeroBanner
+              books={popularBooks}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+              favoriteIds={favoriteIds}
+            />
+
+            {/* 2. Category Chips Bar directly under Hero */}
+            <div className="mb-8">
+              <CategoryChips selected={selectedCategory} onChange={handleCategoryChange} />
+            </div>
+
+            {/* 3. Continue Reading Shelf (hidden if empty) */}
             {continueBooks.length > 0 && (
-              <BookShelfRow
+              <NetflixRow
                 title="Continue Reading"
                 icon={<BookOpen className="w-4 h-4 text-[var(--accent-brass)]" />}
                 books={continueBooks}
                 loading={continueLoading}
                 favoriteIds={favoriteIds}
-                onBookClick={(book) => setSelectedBook(book)}
+                progressMap={progressMap}
+                onRead={openReader}
+                onToggleFavorite={toggleFavorite}
+                onOpenDetail={(b) => setSelectedBook(b)}
               />
             )}
 
-            {/* 2. Favorites Shelf */}
+            {/* 4. Your Favourites Shelf (hidden if empty) */}
             {favorites && favorites.length > 0 && (
-              <BookShelfRow
+              <NetflixRow
                 title="Your Favourites"
                 icon={<Heart className="w-4 h-4 fill-current text-[var(--accent-primary)]" />}
                 books={favorites}
                 loading={false}
                 favoriteIds={favoriteIds}
-                onBookClick={(book) => setSelectedBook(book)}
+                onRead={openReader}
+                onToggleFavorite={toggleFavorite}
+                onOpenDetail={(b) => setSelectedBook(b)}
               />
             )}
 
-            {/* 3. Popular Classics Shelf */}
-            <BookShelfRow
-              title="Popular Classics"
-              icon={<Star className="w-4 h-4 fill-current text-[var(--accent-brass)]" />}
-              books={popularBooks}
+            {/* 5. Top 10 Today (with large rank numerals behind covers) */}
+            <NetflixRow
+              title="Top 10 Today"
+              icon={<Flame className="w-4 h-4 text-[var(--accent-primary)]" />}
+              books={popularBooks.slice(0, 10)}
               loading={popularLoading}
               error={popularError}
               favoriteIds={favoriteIds}
-              onBookClick={(book) => setSelectedBook(book)}
+              isTop10={true}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
               onRetry={fetchPopular}
             />
 
-            {/* 4. Because You Favorited Shelf (Dynamic Recommendation) */}
+            {/* 6. Popular Classics */}
+            <NetflixRow
+              title="Popular Classics"
+              icon={<Star className="w-4 h-4 fill-current text-[var(--accent-brass)]" />}
+              books={popularBooks.slice(10, 32)}
+              loading={popularLoading}
+              error={popularError}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('popular' as any)}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+              onRetry={fetchPopular}
+            />
+
+            {/* 7. Horror & Gothic */}
+            <NetflixRow
+              title="Horror & Gothic"
+              icon={<span className="text-base">🕯️</span>}
+              books={horrorBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('horror-gothic')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 8. Science & Nature */}
+            <NetflixRow
+              title="Science & Nature"
+              icon={<span className="text-base">🔬</span>}
+              books={scienceBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('science-nature')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 9. Mystery & Crime */}
+            <NetflixRow
+              title="Mystery & Crime"
+              icon={<span className="text-base">🔍</span>}
+              books={mysteryBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('mystery-crime')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 10. Adventure */}
+            <NetflixRow
+              title="Adventure & Sea Stories"
+              icon={<span className="text-base">⚓</span>}
+              books={adventureBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('adventure')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 11. Romance */}
+            <NetflixRow
+              title="Romance & Love Stories"
+              icon={<span className="text-base">🌹</span>}
+              books={romanceBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('romance')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 12. Fantasy & Myth */}
+            <NetflixRow
+              title="Fantasy & Myth"
+              icon={<span className="text-base">🐉</span>}
+              books={fantasyBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('fantasy-myth')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 13. History */}
+            <NetflixRow
+              title="History & Chronicles"
+              icon={<span className="text-base">📜</span>}
+              books={historyBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('history')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 14. Documentary & Nonfiction */}
+            <NetflixRow
+              title="Documentary & Nonfiction"
+              icon={<span className="text-base">📰</span>}
+              books={nonfictionBooks}
+              loading={categoryShelvesLoading}
+              favoriteIds={favoriteIds}
+              onSeeAll={() => handleCategoryChange('documentary-nonfiction')}
+              onRead={openReader}
+              onToggleFavorite={toggleFavorite}
+              onOpenDetail={(b) => setSelectedBook(b)}
+            />
+
+            {/* 15. Because You Favorited... */}
             {recommendedBooks.length > 0 && (
-              <BookShelfRow
+              <NetflixRow
                 title={`Because You Favorited “${recommendedSubject}”`}
-                icon={<BookMarked className="w-4 h-4 text-[var(--accent-brass)]" />}
+                icon={<Sparkles className="w-4 h-4 text-[var(--accent-brass)]" />}
                 books={recommendedBooks}
                 loading={recommendedLoading}
                 favoriteIds={favoriteIds}
-                onBookClick={(book) => setSelectedBook(book)}
+                onRead={openReader}
+                onToggleFavorite={toggleFavorite}
+                onOpenDetail={(b) => setSelectedBook(b)}
               />
             )}
 
-            {/* 5. Horror & Gothic Shelf */}
-            <BookShelfRow
-              title="Horror & Gothic"
-              icon={<span className="text-base">🕯️</span>}
-              books={previewHorror}
-              loading={previewsLoading}
-              favoriteIds={favoriteIds}
-              onBookClick={(book) => setSelectedBook(book)}
-            />
-
-            {/* 6. Science Fiction Shelf */}
-            <BookShelfRow
-              title="Science Fiction"
-              icon={<span className="text-base">🚀</span>}
-              books={previewSciFi}
-              loading={previewsLoading}
-              favoriteIds={favoriteIds}
-              onBookClick={(book) => setSelectedBook(book)}
-            />
-
-            {/* 7. Mystery & Crime Shelf */}
-            <BookShelfRow
-              title="Mystery & Crime"
-              icon={<span className="text-base">🔍</span>}
-              books={previewMystery}
-              loading={previewsLoading}
-              favoriteIds={favoriteIds}
-              onBookClick={(book) => setSelectedBook(book)}
-            />
-
-            {/* 8. Adventure Shelf */}
-            <BookShelfRow
-              title="Adventure & Sea Stories"
-              icon={<span className="text-base">⚓</span>}
-              books={previewAdventure}
-              loading={previewsLoading}
-              favoriteIds={favoriteIds}
-              onBookClick={(book) => setSelectedBook(book)}
-            />
-
             {/* Editorial Footer / Colophon */}
-            <footer className="mt-12 pt-8 pb-6 border-t text-center" style={{ borderColor: 'var(--border-hairline)' }}>
+            <footer className="mt-14 pt-8 pb-8 border-t text-center" style={{ borderColor: 'var(--border-hairline)' }}>
               <p className="font-manuscript text-xs italic" style={{ color: 'var(--accent-brass)' }}>
-                ❦ The Inkwell Atelier Reading Room
+                ❦ The Inkwell Atelier Reading Room · Public-Domain Volumes Only
               </p>
               <p className="font-manuscript text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Public-domain volumes sourced directly from the Project Gutenberg archive. Free to read, annotate, and preserve.
+                All works sourced directly from the Project Gutenberg archive. Free to read, annotate, and preserve.
               </p>
             </footer>
           </div>
