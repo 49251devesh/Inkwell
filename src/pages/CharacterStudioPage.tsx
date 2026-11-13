@@ -22,6 +22,7 @@ import { CharacterDossierDialog } from '../components/characters/CharacterDossie
 import { CharacterNetworkGraph } from '../components/characters/CharacterNetworkGraph';
 import { UnfoldingPaperDialog } from '../components/common/UnfoldingPaperDialog';
 import { EmptyCastIllustration } from '../components/common/EmptyStateIllustrations';
+import { getAIHeaders, providerLabel } from '../lib/aiClient';
 
 
 export const CharacterStudioPage: React.FC = () => {
@@ -130,7 +131,7 @@ export const CharacterStudioPage: React.FC = () => {
 
       const response = await fetch('/api/generate-character-map', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAIHeaders() },
         body: JSON.stringify({
           projectTitle: targetProject.title,
           genre: targetProject.genre,
@@ -144,6 +145,7 @@ export const CharacterStudioPage: React.FC = () => {
       }
 
       const result = await response.json();
+      if (result.provider && result.model) notify('Character Map Sourced', providerLabel(result.provider, result.model));
       if (result.characters && Array.isArray(result.characters) && result.characters.length > 0) {
         if (replaceExisting) {
           const toRemove = data.characters.filter((c) => c.projectId === targetProject.id);

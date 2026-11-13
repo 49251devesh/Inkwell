@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { CornerOrnament, FleuronDivider } from '../ornaments/Ornaments';
+import { getAIHeaders, providerLabel } from '../../lib/aiClient';
 
 export interface ChatMessage {
   id: string;
@@ -20,6 +21,8 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   isOffline?: boolean;
+  provider?: string;
+  model?: string;
 }
 
 export interface AIConversationalDrawerProps {
@@ -179,6 +182,7 @@ export const AIConversationalDrawer: React.FC<AIConversationalDrawerProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...getAIHeaders(),
         },
         body: JSON.stringify(chatPayload),
       });
@@ -217,8 +221,17 @@ export const AIConversationalDrawer: React.FC<AIConversationalDrawerProps> = ({
             break;
           }
 
+          let parsed: { meta?: { provider: string; model: string }; text?: string; offline?: boolean; error?: string } | null = null;
           try {
-            const parsed = JSON.parse(dataPayload);
+            parsed = JSON.parse(dataPayload);
+          } catch {
+            parsed = null;
+          }
+          if (parsed) {
+            if (parsed.meta) {
+              const { provider, model } = parsed.meta;
+              setMessages((prev) => prev.map((msg) => msg.id === assistantMsgId ? { ...msg, provider, model } : msg));
+            }
             if (parsed.text) {
               accumulatedText += parsed.text;
               if (parsed.offline) isOfflineFlag = true;
@@ -237,7 +250,7 @@ export const AIConversationalDrawer: React.FC<AIConversationalDrawerProps> = ({
             } else if (parsed.error) {
               throw new Error(parsed.error);
             }
-          } catch {
+          } else {
             // If raw text chunk without JSON wrapping
             if (dataPayload && dataPayload !== '[DONE]') {
               accumulatedText += dataPayload;
@@ -393,6 +406,11 @@ export const AIConversationalDrawer: React.FC<AIConversationalDrawerProps> = ({
                       {!isUser && msg.isOffline && (
                         <span className="font-mono text-[9px] text-[var(--accent-primary)] dark:text-[#E89BA4] bg-[var(--burgundy-wash)] px-1 py-0.5 rounded uppercase font-medium">
                           Offline
+                        </span>
+                      )}
+                      {!isUser && msg.provider && msg.model && (
+                        <span className="font-mono text-[9px] text-[var(--accent-brass-bright)]">
+                          {providerLabel(msg.provider, msg.model)}
                         </span>
                       )}
                     </div>

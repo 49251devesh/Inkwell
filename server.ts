@@ -1,10 +1,11 @@
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getParsedEpub, getSanitizedChapterHtml, getAssetFromEpub } from './src/server/epubService';
+import { createAIProvider, configuredProviderIds, getOpenRouterFreeModels, AIProviderError } from './server/ai';
+import type { AIMessage, AIProviderId } from './server/ai';
 
 dotenv.config();
 
@@ -13,24 +14,72 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
   app.use(express.json({ limit: '10mb' }));
 
-  // Initialize Gemini SDK if API key is provided
-  const apiKey = process.env.GEMINI_API_KEY;
-  const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  let ai: GoogleGenAI | null = null;
-  if (apiKey) {
-    ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-  }
+  const aiRequestOptions = (req: Request) => ({
+    provider: (req.header('x-inkwell-ai-provider') || undefined) as AIProviderId | undefined,
+    model: req.header('x-inkwell-ai-model') || undefined,
+    apiKey: req.header('x-inkwell-ai-key') || undefined,
+  });
+
+  const aiMeta = (res: Response) => (provider: AIProviderId, model: string) => {
+    res.write(`data: ${JSON.stringify({ meta: { provider, model } })}\n\n`);
+  };
+
+  app.get('/api/ai/providers', (_req: Request, res: Response) => {
+    res.json({ providers: configuredProviderIds(), labels: { gemini: 'Gemini', openrouter: 'OpenRouter', ollama: 'Local Ollama', offline: 'Offline fallback' } });
+  });
+
+  app.get('/api/ai/models', async (req: Request, res: Response) => {
+    const provider = (typeof req.query.provider === 'string' ? req.query.provider : 'offline') as AIProviderId;
+    const key = req.header('x-inkwell-ai-key') || undefined;
+    try {
+      if (provider === 'openrouter') return res.json({ provider, models: await getOpenRouterFreeModels(key || process.env.OPENROUTER_API_KEY) });
+      if (provider === 'ollama') return res.json({ provider, models: [process.env.OLLAMA_MODEL || 'llama3.2'] });
+      if (provider === 'gemini') return res.json({ provider, models: [process.env.GEMINI_MODEL || 'gemini-2.5-flash'] });
+      return res.json({ provider: 'offline', models: ['offline-fallback'] });
+    } catch (error) {
+      const normalized = error instanceof AIProviderError ? error : new AIProviderError('provider_unavailable', 'Could not load AI models.');
+      return res.status(normalized.status || 502).json({ error: normalized.message, code: normalized.code });
+    }
+  });
+
+  app.post('/api/ai/test', async (req: Request, res: Response) => {
+    const headerOptions = aiRequestOptions(req);
+    const { provider, model } = { provider: req.body?.provider || headerOptions.provider, model: req.body?.model || headerOptions.model } as { provider?: AIProviderId; model?: string };
+    const apiKey = headerOptions.apiKey;
+    try {
+      let usedProvider: AIProviderId = 'offline'; let usedModel = 'offline-fallback';
+      const result = await createAIProvider(provider, model, apiKey).generateJson<{ ok: boolean }>('Return exactly {"ok":true}.', { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] }, { apiKey, model, reportModel: (p, m) => { usedProvider = p; usedModel = m; } });
+      return res.json({ ok: result.ok !== false, provider: usedProvider, model: usedModel });
+    } catch (error) {
+      const normalized = error instanceof AIProviderError ? error : new AIProviderError('provider_unavailable', 'Could not reach that AI provider.');
+      return res.status(normalized.status || 502).json({ error: normalized.message, code: normalized.code });
+    }
+  });
+
+  app.post('/api/ai/assist', async (req: Request, res: Response) => {
+    const { action, selectedText = '', contextText = '', chapterTitle = '', projectTitle = '', projectGenre = '', customPrompt = '' } = req.body || {};
+    const cleanSelection = String(selectedText).replace(/<[^>]+>/g, '').trim();
+    const prompt = `Act as an exacting literary editor. Action: ${action}. Manuscript: ${projectTitle} (${projectGenre}). Chapter: ${chapterTitle}. Selected text: ${cleanSelection || '(none)'}. Context: ${String(contextText).replace(/<[^>]+>/g, '').slice(-5000)}. ${customPrompt ? `Author's extra instruction: ${customPrompt}` : ''} Return only the editorial response, with no preamble.`;
+    const offlineText = action === 'critique'
+      ? 'The passage has strong atmospheric restraint. Let the silence settle for one more beat before the next action so the emotional turn can register.'
+      : action === 'brainstorm'
+      ? '1. The evidence points to an older secret.\n\n2. An ally arrives with a conflicting account.\n\n3. The protagonist must choose between truth and protection.'
+      : cleanSelection || 'Rain ceased abruptly, leaving the room wrapped in a cold river-mist that smelled of wet timber and iron-gall ink.';
+    let providerId: AIProviderId = 'offline'; let usedModel = 'offline-fallback';
+    try {
+      const { provider, model, apiKey } = aiRequestOptions(req);
+      let output = '';
+      for await (const text of createAIProvider(provider, model, apiKey).streamChat([{ role: 'user', content: prompt }], { apiKey, model, offlineText, reportModel: (p, m) => { providerId = p; usedModel = m; } })) output += text;
+      return res.json({ action, headline: action === 'critique' ? 'Editorial Appraisal' : 'Editorial Margin Note', output, critiquePoints: action === 'critique' || action === 'brainstorm' ? ['Grounded in the current manuscript context.', 'Preserves the author’s voice and intent.'] : undefined, isDemo: providerId === 'offline', provider: providerId, model: usedModel, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+    } catch (error) {
+      const normalized = error instanceof AIProviderError ? error : new AIProviderError('provider_unavailable', 'The AI provider is temporarily unavailable. Please try again.');
+      return res.status(normalized.status || 502).json({ error: normalized.message, code: normalized.code });
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // API: Automatically Generate Character Constellation Map from Story
@@ -53,10 +102,7 @@ async function startServer() {
         .join('\n\n')
         .slice(0, 14000);
 
-      // Attempt Gemini AI extraction if key is present
-      if (ai) {
-        try {
-          const prompt = `You are a master literary editor and dramaturg. Analyze this manuscript and generate a comprehensive character relationship map (dramatis personae) with interconnected relationships.
+      const prompt = `You are a master literary editor and dramaturg. Analyze this manuscript and generate a comprehensive character relationship map (dramatis personae) with interconnected relationships.
 
 Manuscript Title: "${projectTitle}"
 Genre: ${genre}
@@ -77,60 +123,6 @@ Instructions:
    - notes: sensory physicality, habits, or symbolic object (e.g. "Carries a bone folder and brass pocket lens")
 Ensure the relationships reference the exact names of other characters in the cast so they form a connected directed graph.`;
 
-          const geminiPromise = ai.models.generateContent({
-            model: GEMINI_MODEL,
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  characters: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        name: { type: Type.STRING },
-                        role: { type: Type.STRING },
-                        traits: {
-                          type: Type.ARRAY,
-                          items: { type: Type.STRING },
-                        },
-                        motivation: { type: Type.STRING },
-                        arc: { type: Type.STRING },
-                        relationships: { type: Type.STRING },
-                        notes: { type: Type.STRING },
-                      },
-                      required: ['name', 'role', 'motivation', 'relationships'],
-                    },
-                  },
-                },
-                required: ['characters'],
-              },
-            },
-          });
-
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Gemini API timeout')), 6000)
-          );
-
-          const response = await Promise.race([geminiPromise, timeoutPromise]);
-
-          const parsed = JSON.parse(response.text || '{}');
-          if (Array.isArray(parsed.characters) && parsed.characters.length > 0) {
-            return res.json({
-              success: true,
-              source: 'gemini',
-              characters: parsed.characters,
-            });
-          }
-        } catch (geminiError) {
-          console.warn('Gemini character generation fallback engaged:', geminiError);
-          // Fall through to deterministic story extractor
-        }
-      }
-
-      // Fallback: Intelligent domain-based story extraction
       const fallbackCharacters = generateStoryCharactersFallback(
         projectTitle,
         genre,
@@ -138,15 +130,15 @@ Ensure the relationships reference the exact names of other characters in the ca
         chapters
       );
 
-      return res.json({
-        success: true,
-        source: 'story-extractor',
-        characters: fallbackCharacters,
-      });
+      let providerId: AIProviderId = 'offline'; let model = 'offline-fallback';
+      const { provider, model: requestedModel, apiKey } = aiRequestOptions(req);
+      const parsed = await createAIProvider(provider, requestedModel, apiKey).generateJson<{ characters: unknown[] }>(prompt, {
+        type: 'object', properties: { characters: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, role: { type: 'string' }, traits: { type: 'array', items: { type: 'string' } }, motivation: { type: 'string' }, arc: { type: 'string' }, relationships: { type: 'string' }, notes: { type: 'string' } }, required: ['name', 'role', 'motivation', 'relationships'] } } }, required: ['characters'],
+      }, { apiKey, model: requestedModel, offlineJson: { characters: fallbackCharacters }, reportModel: (p, m) => { providerId = p; model = m; } });
+      return res.json({ success: true, source: providerId, provider: providerId, model, characters: Array.isArray(parsed.characters) && parsed.characters.length ? parsed.characters : fallbackCharacters });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown generation failure';
-      console.error('Failed to generate character map:', message);
-      res.status(500).json({ error: message });
+      const normalized = err instanceof AIProviderError ? err : new AIProviderError('provider_unavailable', 'The AI provider is temporarily unavailable. Please try again.');
+      res.status(normalized.status || 502).json({ error: normalized.message, code: normalized.code });
     }
   });
 
@@ -883,61 +875,6 @@ Provide perceptive dramaturgical critique, character psychology insights, narrat
 Ground your guidance in the provided story context, character dossiers, and world lore where applicable.
 Maintain a warm, encouraging, intellectually rigorous tone worthy of a classical bookmaker and literary scholar.`;
 
-      // 3. Attempt Gemini streaming if AI client is initialized
-      if (ai) {
-        try {
-          // Construct formatted conversation contents alternating user / model
-          const formattedContents = messages
-            .filter((m: { role?: string; content?: string }) => m && typeof m.content === 'string')
-            .map((m: { role?: string; content: string }, idx: number) => {
-              const role = m.role === 'assistant' || m.role === 'model' ? 'model' : 'user';
-              let textContent = m.content;
-
-              // Inject manuscript dossier context into the opening user turn
-              if (idx === 0 && role === 'user') {
-                const dossierHeader = [
-                  `[MANUSCRIPT DOSSIER: "${projectTitle}" (${projectGenre})]`,
-                  characterContext ? `[DRAMATIS PERSONAE]:\n${characterContext}` : '',
-                  worldContext ? `[WORLD & LORE]:\n${worldContext}` : '',
-                  chapterExcerpt ? `[CURRENT CHAPTER EXCERPT]:\n${chapterExcerpt}` : '',
-                  '---',
-                  `Author's Query: ${textContent}`,
-                ]
-                  .filter(Boolean)
-                  .join('\n\n');
-                textContent = dossierHeader;
-              }
-
-              return {
-                role,
-                parts: [{ text: textContent }],
-              };
-            });
-
-          const responseStream = await ai.models.generateContentStream({
-            model: GEMINI_MODEL,
-            contents: formattedContents,
-            config: {
-              systemInstruction,
-            },
-          });
-
-          for await (const chunk of responseStream) {
-            const text = chunk.text;
-            if (text) {
-              res.write(`data: ${JSON.stringify({ text })}\n\n`);
-            }
-          }
-
-          res.write('data: [DONE]\n\n');
-          return res.end();
-        } catch (geminiErr) {
-          console.warn('Gemini chat streaming failed or timed out; engaging offline dramaturg:', geminiErr);
-          // Fall through to offline companion
-        }
-      }
-
-      // 4. Graceful offline fallback response
       const offlineReply = generateOfflineEditorialChat(
         lastMessage.content,
         chapterExcerpt,
@@ -946,14 +883,39 @@ Maintain a warm, encouraging, intellectually rigorous tone worthy of a classical
         characterContext
       );
 
-      res.write(
-        `data: ${JSON.stringify({
-          text: `[Offline Editorial Dramaturg]\n\n${offlineReply}`,
-          offline: true,
-        })}\n\n`
-      );
-      res.write('data: [DONE]\n\n');
-      return res.end();
+      const { provider, model, apiKey } = aiRequestOptions(req);
+      const aiProvider = createAIProvider(provider, model, apiKey);
+      const messagesForProvider: AIMessage[] = [
+        { role: 'system', content: systemInstruction },
+        ...messages.filter((m: { role?: string; content?: string }) => m && typeof m.content === 'string').map((m: { role?: string; content: string }, idx: number) => ({
+          role: (m.role === 'assistant' ? 'assistant' : 'user') as AIMessage['role'],
+          content: idx === 0 ? [
+            `[MANUSCRIPT DOSSIER: "${projectTitle}" (${projectGenre})]`,
+            characterContext ? `[DRAMATIS PERSONAE]:\n${characterContext}` : '',
+            worldContext ? `[WORLD & LORE]:\n${worldContext}` : '',
+            chapterExcerpt ? `[CURRENT CHAPTER EXCERPT]:\n${chapterExcerpt}` : '',
+            '---', `Author's Query: ${m.content}`,
+          ].filter(Boolean).join('\n\n') : m.content,
+        })),
+      ];
+
+      try {
+        for await (const text of aiProvider.streamChat(messagesForProvider, {
+          apiKey,
+          model,
+          offlineText: `[Offline Editorial Dramaturg]\n\n${offlineReply}`,
+          reportModel: aiMeta(res),
+        })) {
+          res.write(`data: ${JSON.stringify({ text, offline: aiProvider.id === 'offline' })}\n\n`);
+        }
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      } catch (error) {
+        const message = error instanceof AIProviderError ? error.message : 'The AI provider is temporarily unavailable. Please try again.';
+        res.write(`data: ${JSON.stringify({ error: message })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Chat server error';
       console.error('Failure in /api/chat:', message);

@@ -20,6 +20,7 @@ import {
   AI_ACTIONS,
   AIActionType,
   AIResponse,
+  providerLabel,
   requestAIAssistance,
 } from '../../lib/aiService';
 import { CornerOrnament, FleuronDivider } from '../ornaments/Ornaments';
@@ -304,7 +305,6 @@ export const AIMarginPanel: React.FC<AIMarginPanelProps> = ({
                     backgroundColor: 'var(--bg-canvas)',
                   }}
                 >
-                  {/* DEMO RESPONSE BADGE (Prominent per requirements) */}
                   <div className="flex items-center justify-between gap-2 pb-2.5 border-b" style={{ borderColor: 'var(--border-hairline)' }}>
                     <div className="flex items-center gap-1.5">
                       <span
@@ -316,7 +316,7 @@ export const AIMarginPanel: React.FC<AIMarginPanelProps> = ({
                           fontWeight: 600,
                         }}
                       >
-                        Demo response
+                        {providerLabel(currentResponse.provider, currentResponse.model)}
                       </span>
                       <span className="text-xs font-mono-tabular text-stone-500">
                         · {currentResponse.timestamp}

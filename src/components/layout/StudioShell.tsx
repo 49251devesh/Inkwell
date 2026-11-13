@@ -13,9 +13,11 @@ import {
   Users,
   Database,
   BookMarked,
+  Settings2,
 } from 'lucide-react';
 import { useThemeTransition } from '../../hooks/useThemeTransition';
 import { DataArchiveDialog } from '../library/DataArchiveDialog';
+import { AISettingsDialog } from './AISettingsDialog';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Library', icon: BookOpen, end: true },
@@ -33,6 +35,7 @@ export const StudioShell: React.FC<{ children: React.ReactNode }> = ({
   const { isMidnight, switchThemeWithInkSpread } = useThemeTransition();
   const location = useLocation();
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [isAISettingsOpen, setIsAISettingsOpen] = useState(false);
 
   return (
     <div className="relative min-h-screen flex flex-col">
@@ -145,6 +148,17 @@ export const StudioShell: React.FC<{ children: React.ReactNode }> = ({
 
           {/* Zone 3: Primary Actions — Archive Vault & Lamplight Theme Toggle */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsAISettingsOpen(true)}
+              title="Settings: AI provider"
+              aria-label="Open AI settings"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-manuscript border cursor-pointer whitespace-nowrap shrink-0 transition-colors hover:bg-[var(--burgundy-wash)] focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-hairline)', color: 'var(--text-secondary)' }}
+            >
+              <Settings2 className="w-3.5 h-3.5 text-[var(--accent-brass)]" strokeWidth={1.4} />
+              <span className="hidden sm:inline">Settings</span>
+            </button>
             {/* Global Archive Vault (Export & Import JSON) */}
             <button
               type="button"
@@ -267,6 +281,7 @@ export const StudioShell: React.FC<{ children: React.ReactNode }> = ({
         open={isArchiveOpen}
         onClose={() => setIsArchiveOpen(false)}
       />
+      <AISettingsDialog open={isAISettingsOpen} onClose={() => setIsAISettingsOpen(false)} />
     </div>
   );
 };

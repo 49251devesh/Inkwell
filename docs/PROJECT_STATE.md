@@ -13,7 +13,11 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 
 ## Folder map
 
-- `server.ts` — Express API, Gemini setup, Gutenberg proxy, SSE chat, Vite/static hosting.
+- `server.ts` — Express API, AI routes, Gutenberg proxy, SSE chat, Vite/static hosting.
+- `server/ai/types.ts` — provider interface, request metadata, normalized error types.
+- `server/ai/providers.ts` — Gemini, OpenRouter, Ollama, and offline provider implementations.
+- `server/ai/index.ts` — provider selection and one-hour OpenRouter free-model catalog cache.
+- `server/ai/errors.ts` — friendly AI error normalization and timeout helpers.
 - `package.json` — scripts and dependency declarations.
 - `vite.config.ts` — React/Tailwind Vite configuration.
 - `tsconfig.json` — TypeScript compiler configuration.
@@ -23,7 +27,9 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 - `src/types/inkwell.ts` — Project, Chapter, Character, world, session, and settings types.
 - `src/store/inkwellStore.tsx` — React context CRUD store and localStorage persistence.
 - `src/lib/seedData.ts` — sample library seed data.
-- `src/lib/aiService.ts` — six client-side deterministic/demo editorial actions.
+- `src/lib/aiService.ts` — client boundary for provider-backed editorial actions.
+- `src/lib/aiClient.ts` — browser-only AI settings/key storage and request headers.
+- `src/components/layout/AISettingsDialog.tsx` — Settings > AI provider/model/BYOK panel.
 - `src/lib/readingRoomDb.ts` — Dexie schema for Reading Room IndexedDB.
 - `src/server/epubService.ts` — EPUB fetch/cache, parse, sanitize, manifest/chapter/assets.
 - `src/pages/DeskPage.tsx` — project/chapter editor, autosave, AI panels, focus mode.
@@ -41,6 +47,7 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 - `/` Library; `/desk` Desk using active project; `/desk/:projectId` Desk for a project.
 - `/projects` Manuscripts; `/characters` Character Studio; `/world` World Builder; `/analytics` Analytics.
 - `/reading-room` Reading Room; unknown paths redirect to `/`.
+- AI APIs: `GET /api/ai/providers`, `GET /api/ai/models?provider=`, `POST /api/ai/test`, `POST /api/ai/assist`.
 
 ## Data model and persistence
 
@@ -61,7 +68,7 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 
 ## Environment and commands
 
-- Variable names used: `GEMINI_API_KEY`, `GEMINI_MODEL`, `APP_URL` (documented example; `APP_URL` is not read by current source), `NODE_ENV`, `DISABLE_HMR`.
+- Variable names used: `GEMINI_API_KEY`, `GEMINI_MODEL`, `OPENROUTER_API_KEY`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `PORT`, `APP_URL` (documented example; `APP_URL` is not read by current source), `NODE_ENV`, `DISABLE_HMR`.
 - Never commit or copy values from `.env`; use `.env.example` as the name-only template.
 - Install: `npm install`. Develop: `npm run dev` (serves `http://localhost:3000`). Start aliases dev: `npm start`.
 - Validate types: `npm run lint`. Build: `npm run build`. Preview built client: `npm run preview` (not the API server).
@@ -82,18 +89,19 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 
 ### In progress
 
-- AI provider abstraction is not complete: `src/lib/aiService.ts` still returns handcrafted demo outputs for Desk margin actions; server Gemini is separate.
+- AI provider layer now covers chat, character-map generation, and margin assistance; live provider validation remains environment-dependent.
 - Reading Room is the only feature using IndexedDB; the main studio still uses localStorage. No BYO-key or OpenRouter provider flow exists.
 
 ### Known bugs / maintenance
 
 - Production build passes, but Vite warns that `vite.config.ts` uses `__dirname` with the future native config loader and warns about a >500 kB minified JS chunk.
 - No automated tests or pinned Node version; `npm run clean` assumes Unix shell. `package.json` retains the starter name `react-example`.
-- `APP_URL` is present in `.env.example` but unused; server port is fixed at 3000. Server-side API behavior depends on external Gutendex/Gutenberg availability.
+- `APP_URL` is present in `.env.example` but unused; server defaults to port 3000 and honors `PORT`. Server-side API behavior depends on external Gutendex/Gutenberg availability.
+- Browser BYOK keys live only in `inkwell_ai_settings`; they are sent in `x-inkwell-ai-key` and are not logged, persisted, or echoed by the server. `.env` is used only when no browser key is sent.
 
 ## Roadmap
 
-- M1 — AI provider layer: Gemini, OpenRouter free, bring-your-own-key.
+- M1 — AI provider layer: Gemini, OpenRouter free, bring-your-own-key. Provider layer is implemented; live provider validation remains environment-dependent.
 - M2 — Story memory.
 - M3 — Automatic character detection.
 - M4 — IndexedDB storage layer.
