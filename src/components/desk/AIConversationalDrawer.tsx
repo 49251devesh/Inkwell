@@ -278,7 +278,9 @@ export const AIConversationalDrawer: React.FC<AIConversationalDrawerProps> = ({
                 ...msg,
                 content:
                   msg.content ||
-                  '[Offline Atelier Mentor]\n\nThe quill paused as the atelier connection dropped. Your manuscript and local notes remain safe. You may retry your query or continue drafting uninterrupted.',
+                  (err instanceof Error
+                    ? err.message
+                    : '[Offline Atelier Mentor]\n\nThe quill paused as the atelier connection dropped. Your manuscript and local notes remain safe. You may retry your query or continue drafting uninterrupted.'),
                 isOffline: true,
               }
             : msg

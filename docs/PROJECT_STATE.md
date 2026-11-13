@@ -54,6 +54,7 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 - `InkwellStoreData` contains `version`, `projects`, `chapters`, `characters`, `locations`, `lore`, `timeline`, `sessions`, and `settings`.
 - Projects own chapters, characters, locations, lore, and timeline entries through `projectId`; sessions track date, words, and minutes.
 - Main studio data persists atomically in browser localStorage key `inkwell_studio_v1`; theme cache is `inkwell_theme`; Desk AI mode is `inkwell_ai_mode`.
+- AI settings persist in browser localStorage key `inkwell_ai_settings` as `activeProvider` plus separate Gemini, OpenRouter, Ollama, and offline records; legacy single-key data migrates on read.
 - `ReadingRoomDatabase` is IndexedDB database `InkwellReadingRoom`, Dexie schema v3: favorites, readingProgress, readerSettings, cachedManifests, cachedChapters, cachedCategoryResults.
 - Server EPUB files are cached on disk at `.cache/library`; parsed EPUBs and Gutenberg API results use in-memory TTL caches. There is no database or auth.
 
@@ -90,7 +91,7 @@ Last verified: 2026-11-13. This file is a code-grounded handoff; do not treat fu
 ### In progress
 
 - AI provider layer now covers chat, character-map generation, and margin assistance; live provider validation remains environment-dependent.
-- Reading Room is the only feature using IndexedDB; the main studio still uses localStorage. No BYO-key or OpenRouter provider flow exists.
+- Reading Room is the only feature using IndexedDB; the main studio and AI settings still use localStorage.
 
 ### Known bugs / maintenance
 

@@ -182,7 +182,7 @@ export const CharacterStudioPage: React.FC = () => {
       }
     } catch (err) {
       console.error('Error generating character map:', err);
-      notify('Constellation Weaving Failed', 'Unable to generate characters from manuscript. Please try again.');
+      notify('Constellation Weaving Failed', err instanceof Error ? err.message : 'Unable to generate characters from manuscript. Please try again.');
     } finally {
       setIsGeneratingStory(false);
     }
