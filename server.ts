@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getParsedEpub, getSanitizedChapterHtml, getAssetFromEpub } from './src/server/epubService';
-import { createAIProvider, configuredProviderIds, getOpenRouterFreeModels, AIProviderError } from './server/ai';
+import { createAIProvider, configuredProviderIds, getGeminiModels, getOpenRouterFreeModels, AIProviderError } from './server/ai';
 import type { AIMessage, AIProviderId } from './server/ai';
 
 dotenv.config();
@@ -38,7 +38,7 @@ async function startServer() {
     try {
       if (provider === 'openrouter') return res.json({ provider, models: await getOpenRouterFreeModels(key || process.env.OPENROUTER_API_KEY) });
       if (provider === 'ollama') return res.json({ provider, models: [process.env.OLLAMA_MODEL || 'llama3.2'] });
-      if (provider === 'gemini') return res.json({ provider, models: [process.env.GEMINI_MODEL || 'gemini-2.5-flash'] });
+      if (provider === 'gemini') return res.json({ provider, models: await getGeminiModels(key) });
       return res.json({ provider: 'offline', models: ['offline-fallback'] });
     } catch (error) {
       const normalized = error instanceof AIProviderError ? error : new AIProviderError('provider_unavailable', 'Could not load AI models.');

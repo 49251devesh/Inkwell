@@ -1,4 +1,5 @@
 import { AIProviderError } from './types';
+import { GoogleGenAI } from '@google/genai';
 import { GeminiProvider, OllamaProvider, OfflineProvider, OpenRouterProvider } from './providers';
 import type { AIProvider, AIProviderId } from './types';
 
@@ -16,6 +17,27 @@ export async function getOpenRouterFreeModels(apiKey?: string) {
   const models = (data.data || []).filter(isFreeModel).map((model) => model.id).filter((id): id is string => Boolean(id));
   openRouterModels = { models, expiresAt: Date.now() + 60 * 60 * 1000 };
   return models;
+}
+
+let geminiModels: { models: string[]; expiresAt: number } | null = null;
+
+export async function getGeminiModels(apiKey?: string) {
+  const key = apiKey || process.env.GEMINI_API_KEY;
+  if (!key) return [process.env.GEMINI_MODEL || 'gemini-2.5-flash'];
+  if (geminiModels && geminiModels.expiresAt > Date.now()) return geminiModels.models;
+  try {
+    const ai = new GoogleGenAI({ apiKey: key });
+    const models: string[] = [];
+    for await (const model of await ai.models.list()) {
+      const name = model.name?.replace(/^models\//, '');
+      if (name && model.supportedActions?.includes('generateContent')) models.push(name);
+    }
+    if (!models.length) throw new Error('No Gemini generateContent models were returned.');
+    geminiModels = { models, expiresAt: Date.now() + 60 * 60 * 1000 };
+    return models;
+  } catch {
+    throw new AIProviderError('provider_unavailable', 'Could not load Gemini models. Check the Gemini key and try again.');
+  }
 }
 
 export function configuredProviderIds(): AIProviderId[] {

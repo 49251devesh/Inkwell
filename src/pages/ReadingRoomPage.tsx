@@ -56,6 +56,7 @@ import {
   Check,
   Flame,
   ArrowRight,
+  ArrowLeft,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -1390,6 +1391,7 @@ export const NetflixBookCard: React.FC<{
   onOpenDetail: (book: LibraryBook) => void;
   rank?: number;
   progressPercent?: number;
+  layout?: 'row' | 'grid';
 }> = ({
   book,
   isFavorite,
@@ -1398,6 +1400,7 @@ export const NetflixBookCard: React.FC<{
   onOpenDetail,
   rank,
   progressPercent,
+  layout = 'row',
 }) => {
   const readingTime = estimateReadingTime(book.downloadCount);
   const authorName = (book.authors && book.authors[0]) || 'Unknown Author';
@@ -1405,8 +1408,16 @@ export const NetflixBookCard: React.FC<{
 
   return (
     <div
-      className="relative flex-shrink-0 group select-none snap-start"
-      style={{ width: '160px' }}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onOpenDetail(book);
+        }
+      }}
+      className={`relative group select-none outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-brass)] rounded-sm ${
+        layout === 'grid' ? 'w-full' : 'flex-shrink-0 snap-start w-40'
+      }`}
     >
       <motion.div
         whileHover={{ y: -8, scale: 1.05 }}
